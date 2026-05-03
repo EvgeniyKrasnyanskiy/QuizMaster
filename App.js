@@ -2344,6 +2344,12 @@ export default function App() {
     }
   };
 
+  const toggleHideSystemTests = async () => {
+    const newVal = !hideCompletedSystemTests;
+    setHideCompletedSystemTests(newVal);
+    await AsyncStorage.setItem(CACHE_KEYS.HIDE_SYSTEM_TESTS, JSON.stringify(newVal));
+  };
+
   const getGroupedQuizzes = () => {
     // Группируем локальные файлы по авторам на основе префиксов
     const groups = {};
@@ -2354,6 +2360,13 @@ export default function App() {
         const isHidden = permanentlyHiddenIds.includes(testId);
 
         if (!showHiddenTests && isHidden) return false;
+
+        const isSystem = file.authorId === 'System';
+        if (isSystem && hideCompletedSystemTests) {
+          const status = studentQuizStatus[file.path] || {};
+          const isCompleted = !!(status.completedAt || (Array.isArray(status.results) && status.results.length > 0));
+          if (isCompleted) return false;
+        }
 
         const search = librarySearch.toLowerCase();
         return file.displayName.toLowerCase().includes(search) || (file.authorId && file.authorId.toLowerCase().includes(search));
