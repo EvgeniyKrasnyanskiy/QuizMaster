@@ -2565,13 +2565,15 @@ export default function App() {
             <View style={{ flex: 1, paddingHorizontal: 16 }}>
               <ScrollView style={{ flex: 1 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
                 {/* 1. Quick Start Block */}
-                <Card style={{ padding: 16, backgroundColor: 'rgba(91, 139, 245, 0.05)', marginTop: 10, borderLeftWidth: 3, borderLeftColor: C.accent }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent, marginBottom: 8 }}>🚀 Быстрый старт</Text>
-                  <Text style={{ fontSize: 12, color: C.textPrimary, lineHeight: 18 }}>
-                    • Создавайте тесты в редакторе или импортируйте CSV.{"\n"}
-                    • Используйте репозиторий <Text style={{ fontWeight: '700' }}>quiz-app-data</Text> для хранения.{"\n"}
-                    • Шифрование выполняется автоматически при сохранении.{"\n"}
-                    • <Text style={{ color: C.textSecondary, fontSize: 11 }}>Листайте вниз для доступа к Dev Tools.</Text>
+                <Card style={{ padding: 20, backgroundColor: 'rgba(91, 139, 245, 0.08)', marginTop: 10, borderLeftWidth: 4, borderLeftColor: C.accent, minHeight: 300 }}>
+                  <Text style={{ fontSize: 22, fontWeight: '700', color: C.accent, marginBottom: 12 }}>🚀 Быстрый старт</Text>
+                  <Text style={{ fontSize: 19, color: C.textPrimary, lineHeight: 28 }}>
+                    • <Text style={{ fontWeight: '700' }}>Создание:</Text> Используйте встроенный редактор или импортируйте CSV-файлы.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Облако:</Text> Для работы с GitHub укажите ваш <Text style={{ color: C.accent }}>Username</Text> и <Text style={{ color: C.accent }}>Token</Text> в профиле.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Синхронизация:</Text> Все изменения в репозитории <Text style={{ fontStyle: 'italic' }}>quiz-app-data</Text> отслеживаются автоматически.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Безопасность:</Text> Файлы <Text style={{ color: C.success }}>.dat</Text> шифруются ключом приложения.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка со значком облака в управлении тестами загружает ваш тест для всех учеников.{"\n"}
+                    • <Text style={{ color: C.textSecondary, fontSize: 16, marginTop: 10 }}>Листайте вниз для доступа к Dev Tools.</Text>
                   </Text>
                 </Card>
 
@@ -2616,20 +2618,20 @@ export default function App() {
                 </View>
 
                 {/* 4. Developer Tools */}
-                <Card style={{ padding: 12, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 24, marginBottom: 20 }}>
+                <Card style={{ padding: 16, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 24, marginBottom: 20 }}>
                   <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 12 }}>🛠 Инструменты разработчика</Text>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ alignItems: 'center' }}>
                     <Btn 
-                      label="Сброс блокировок" 
+                      label="Сбросить все блокировки тестов" 
                       onPress={handleResetCooldowns} 
                       variant="black" 
-                      style={{ flex: 1, height: 38, paddingVertical: 0 }} 
+                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1, marginBottom: 12 }} 
                     />
                     <Btn 
-                      label="Сброс Sync" 
+                      label="Сбросить кулдаун синхронизации" 
                       onPress={handleResetSyncCooldowns} 
                       variant="black" 
-                      style={{ flex: 1, height: 38, paddingVertical: 0 }} 
+                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1 }} 
                     />
                   </View>
                 </Card>
