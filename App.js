@@ -323,6 +323,13 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [totalTime, setTotalTime] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [permanentlyHiddenIds, setPermanentlyHiddenIds] = useState([]);
+  const [showHiddenTests, setShowHiddenTests] = useState(false);
+  const [hideCompletedSystemTests, setHideCompletedSystemTests] = useState(false);
+  const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [actionTargetTest, setActionTargetTest] = useState(null);
+  const [activeAuthorId, setActiveAuthorId] = useState('');
+  const [librarySearch, setLibrarySearch] = useState('');
   const [studentLibraryFiles, setStudentLibraryFiles] = useState([]);
   const [teacherLibraryFiles, setTeacherLibraryFiles] = useState([]);
   const [studentQuizStatus, setStudentQuizStatus] = useState({});
@@ -358,12 +365,7 @@ export default function App() {
   const [subscriptions, setSubscriptions] = useState([MASTER_TEACHER]);
   const [newSubUsername, setNewSubUsername] = useState('');
   const [profileInput, setProfileInput] = useState({ owner: '', repo: '', token: '' });
-  const [permanentlyHiddenIds, setPermanentlyHiddenIds] = useState([]);
-  const [showHiddenTests, setShowHiddenTests] = useState(false);
-  const [actionModalVisible, setActionModalVisible] = useState(false);
-  const [actionTargetTest, setActionTargetTest] = useState(null);
-  const [activeAuthorId, setActiveAuthorId] = useState('');
-  const [librarySearch, setLibrarySearch] = useState('');
+
   // ── Загрузка удалённого конфига ──
   const loadConfig = async ({ silent = false } = {}) => {
     const controller = new AbortController();
@@ -449,6 +451,11 @@ export default function App() {
         const hiddenRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDDEN_TESTS);
         if (hiddenRaw) {
           setPermanentlyHiddenIds(JSON.parse(hiddenRaw));
+        }
+
+        const hideSystemRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDE_SYSTEM_TESTS);
+        if (hideSystemRaw) {
+          setHideCompletedSystemTests(JSON.parse(hideSystemRaw));
         }
 
       } catch (e) {
