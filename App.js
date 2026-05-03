@@ -1658,8 +1658,8 @@ export default function App() {
   const handleOpenStudentQuiz = async (file) => {
     const fileName = stripDatExtension(file.displayName);
     const locked = await getTestCooldown(fileName, file.authorId);
-    if (locked) {
-      Alert.alert("Ошибка", "Тест заблокирован на 24 часа");
+    if (locked && file.authorId !== 'System') {
+      Alert.alert("Тест временно заблокирован", `Повторная попытка будет доступна ${formatUnlockTime(locked)}.`);
       return;
     }
 
