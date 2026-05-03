@@ -323,7 +323,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [permanentlyHiddenIds, setPermanentlyHiddenIds] = useState([]);
   const [showHiddenTests, setShowHiddenTests] = useState(false);
-  const [hideCompletedSystemTests, setHideCompletedSystemTests] = useState(false);
   const [actionModalVisible, setActionModalVisible] = useState(false);
   const [actionTargetTest, setActionTargetTest] = useState(null);
   const [activeAuthorId, setActiveAuthorId] = useState('');
@@ -449,11 +448,6 @@ export default function App() {
         const hiddenRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDDEN_TESTS);
         if (hiddenRaw) {
           setPermanentlyHiddenIds(JSON.parse(hiddenRaw));
-        }
-
-        const hideSystemRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDE_SYSTEM_TESTS);
-        if (hideSystemRaw) {
-          setHideCompletedSystemTests(JSON.parse(hideSystemRaw));
         }
 
       } catch (e) {
@@ -1191,6 +1185,7 @@ export default function App() {
   };
 
   const getTestCooldown = async (testName, authorId = '') => {
+    if (authorId === 'System') return false;
     try {
       const prefix = authorId ? `${authorId}_` : '';
       const key = (prefix + stripDatExtension(testName)).toLowerCase();
@@ -1653,7 +1648,7 @@ export default function App() {
   const handleOpenStudentQuiz = async (file) => {
     const fileName = stripDatExtension(file.displayName);
     const locked = await getTestCooldown(fileName, file.authorId);
-    if (locked && file.authorId !== 'System') {
+    if (locked) {
       Alert.alert("Тест временно заблокирован", `Повторная попытка будет доступна ${formatUnlockTime(locked)}.`);
       return;
     }
@@ -2339,12 +2334,6 @@ export default function App() {
     }
   };
 
-  const toggleHideSystemTests = async () => {
-    const newVal = !hideCompletedSystemTests;
-    setHideCompletedSystemTests(newVal);
-    await AsyncStorage.setItem(CACHE_KEYS.HIDE_SYSTEM_TESTS, JSON.stringify(newVal));
-  };
-
   const getGroupedQuizzes = () => {
     // Группируем локальные файлы по авторам на основе префиксов
     const groups = {};
@@ -2355,13 +2344,6 @@ export default function App() {
         const isHidden = permanentlyHiddenIds.includes(testId);
 
         if (!showHiddenTests && isHidden) return false;
-
-        const isSystem = file.authorId === 'System';
-        if (isSystem && hideCompletedSystemTests) {
-          const status = studentQuizStatus[file.path] || {};
-          const isCompleted = !!(status.completedAt || (Array.isArray(status.results) && status.results.length > 0));
-          if (isCompleted) return false;
-        }
 
         const search = librarySearch.toLowerCase();
         return file.displayName.toLowerCase().includes(search) || (file.authorId && file.authorId.toLowerCase().includes(search));
@@ -2718,19 +2700,8 @@ export default function App() {
               "Доступные тесты",
               () => setScreen('welcome'),
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <TouchableOpacity
-                  onPress={() => setShowHiddenTests(!showHiddenTests)}
-                  style={[styles.fileActionBtn, { borderColor: showHiddenTests ? C.accent : C.border, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}
-                >
+                <TouchableOpacity onPress={() => setShowHiddenTests(!showHiddenTests)} style={[styles.fileActionBtn, { borderColor: showHiddenTests ? C.accent : C.border, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}>
                   <Ionicons name={showHiddenTests ? "eye-outline" : "eye-off-outline"} size={14} color={showHiddenTests ? C.accent : C.textSecondary} />
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={toggleHideSystemTests} style={{ marginRight: 16 }}>
-                  <MaterialCommunityIcons
-                    name="school"
-                    size={24}
-                    color={hideCompletedSystemTests ? C.textDisabled : C.accent}
-                  />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -2895,8 +2866,11 @@ export default function App() {
                           const isCloud = !!item.authorId;
                           const isOrphaned = status.isOrphaned;
                           
-                          // Показываем кнопку управления если тест пройден, или это сирота, или это система (чтобы можно было скрыть)
-                          if (!isCompleted && !isOrphaned && isCloud && !isSystem) return null;
+                          // Показываем кнопку управления (Hide) для системы только после прохождения.
+                          // Для остальных облачных тестов - только если пройден или сирота.
+                          // Для локальных - всегда.
+                          const hideEllipsis = isSystem ? !isCompleted : (!isCompleted && !isOrphaned && isCloud);
+                          if (hideEllipsis) return null;
 
                           return (
                             <TouchableOpacity
