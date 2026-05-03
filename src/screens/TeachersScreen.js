@@ -123,7 +123,7 @@ export default function TeachersScreen({
   const removeTeacher = async (teacher) => {
     if (!checkActionCooldown()) return;
     if (teacher.isMaster) {
-      Alert.alert("Запрещено", "Мастер-учителя нельзя удалить.");
+      Alert.alert("Запрещено", "Мастера тестов нельзя удалить.");
       return;
     }
 
@@ -226,7 +226,7 @@ export default function TeachersScreen({
               <View style={{ flex: 1 }}>
                 <Text style={[styles.libraryTitle, { color: C.textPrimary, fontSize: 16 }]}>@{item.owner}</Text>
                 <Text style={[styles.libraryMeta, { color: item.isMaster ? C.accent : C.textSecondary }]}>
-                  {item.isMaster ? '★ Мастер-источник' : `Репозиторий: ${item.repo}`}
+                  {item.isMaster ? '★ Мастер тестов' : `Репозиторий: ${item.repo}`}
                 </Text>
               </View>
 

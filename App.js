@@ -422,7 +422,7 @@ export default function App() {
         const subsRaw = await AsyncStorage.getItem(CACHE_KEYS.SUBSCRIPTIONS);
         if (subsRaw) {
           const parsedSubs = JSON.parse(subsRaw);
-          // Если мастер-учитель почему-то пропал из списка (хотя он защищен), добавляем его
+          // Если Мастер тестов почему-то пропал из списка (хотя он защищен), добавляем его
           if (!parsedSubs.some(s => s.isMaster)) {
             const nextSubs = [MASTER_TEACHER, ...parsedSubs];
             setSubscriptions(nextSubs);
@@ -709,7 +709,7 @@ export default function App() {
               const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
               const binary = atob(cloudFile.content.replace(/\n/g, ''));
               const decrypted = decodeEncryptedPayload(binary, effectiveSalt);
-              
+
               const { questions } = parseQuestions(decrypted);
               if (questions && questions.length > 0) {
                 // Overwrite local file with correctly decrypted content
@@ -732,7 +732,7 @@ export default function App() {
           for (const authorId of authorFolders) {
             const authorDir = `${SafeDirs.DOWNLOADS}${authorId}/`;
             const files = await FileSystem.readDirectoryAsync(authorDir);
-            
+
             for (const fileName of files) {
               const isStillInCloud = registry.some(item => item.authorId === authorId && item.fileName === fileName);
               const statusKey = buildQuizStatusKey(fileName, authorId);
@@ -769,10 +769,10 @@ export default function App() {
       }
 
       await refreshStudentLibrary();
-      
+
       const masterItemsCount = registry.filter(item => item.isFromMaster).length;
       if (masterItemsCount > 0) {
-        console.log(`[MasterSync] Successfully synced ${masterItemsCount} files from Master Source.`);
+        console.log(`[MasterSync] Successfully synced ${masterItemsCount} files from Мастер тестов.`);
       }
 
       if (downloadedCount > 0) {
@@ -917,7 +917,7 @@ export default function App() {
 
   const handleRemoveSubscription = (sub) => {
     if (sub.isMaster) {
-      Alert.alert('Мастер-учитель', 'Вы не можете полностью удалить мастер-учителя, но можете отключить его подписку.');
+      Alert.alert('Мастер тестов', 'Вы не можете полностью удалить Мастера тестов, но можете отключить его подписку.');
       return;
     }
     Alert.alert(
@@ -956,9 +956,9 @@ export default function App() {
       nextSubs.push(MASTER_TEACHER);
     }
     setSubscriptions(nextSubs);
-                    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
     checkForUpdates();
-    Alert.alert('Успех', 'Подписка на мастер-учителя восстановлена.');
+    Alert.alert('Успех', 'Подписка на Мастера тестов восстановлена.');
   };
 
   // ── Определение режима учителя ──
@@ -1067,7 +1067,7 @@ export default function App() {
       const demoFileName = 'System_Welcome_Demo.dat';
       const demoPath = SafeDirs.STUDENT + demoFileName;
       const exists = await FileSystem.getInfoAsync(demoPath);
-      
+
       if (!exists.exists) {
         const content = [
           'METADATA=title:Обучающий тест;author:System',
@@ -1076,10 +1076,10 @@ export default function App() {
           'T;Для текстовых ответов используйте поле ввода. Введите слово "СТАРТ" для продолжения;Введите слово СТАРТ;СТАРТ;СТАРТ',
           'M;После этого теста вы сможете скачивать задания других учителей. Готовы?;Да, готов!;Нет, хочу еще учиться;Может быть;Я передумал;1'
         ].join('\n');
-        
+
         const encrypted = encodeEncryptedPayload(content);
-        await FileSystem.writeAsStringAsync(demoPath, encrypted, { 
-          encoding: FileSystem.EncodingType.UTF8 
+        await FileSystem.writeAsStringAsync(demoPath, encrypted, {
+          encoding: FileSystem.EncodingType.UTF8
         });
         await refreshStudentLibrary();
       }
@@ -1093,22 +1093,22 @@ export default function App() {
       // 1. Загружаем registry.json (публично)
       const baseUrl = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main';
       const registryUrl = `${baseUrl}/registry.json`;
-      
+
       console.log("[MasterSync] Fetching registry:", registryUrl);
       const regResponse = await fetch(registryUrl);
       if (!regResponse.ok) throw new Error(`Registry HTTP ${regResponse.status}`);
-      
+
       const registry = await regResponse.json();
       const tests = registry.tests || [];
 
       // 2. Обработка автора из реестра для подписок + Дедупликация
-      const authorName = registry.author || registry.username || 'Master Source';
+      const authorName = registry.author || registry.username || 'Мастер тестов';
       const masterOwner = 'EvgeniyKrasnyanskiy';
       const subId = `master-public-${registry.id || 'reg'}`;
-      
+
       setSubscriptions(prev => {
         const base = (prev || []).filter(s => s && (s.owner || s.username || s.name));
-        
+
         const nextSubs = [...base, {
           id: subId,
           name: authorName,
@@ -1125,27 +1125,27 @@ export default function App() {
             uniqueMap.set(key, s);
           }
         });
-        
+
         return Array.from(uniqueMap.values());
       });
- 
+
       let successCount = 0;
       for (const test of tests) {
         try {
           const fileName = test.file || `${test.id}.dat`;
           const fileUrl = `${baseUrl}/tests/${fileName}`;
-          
+
           console.log(`[MasterSync] Syncing: ${fileName}`);
           const fileRes = await fetch(fileUrl);
           if (!fileRes.ok) continue;
 
           const rawContent = await fileRes.text();
           const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
-          
+
           const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
-          
+
           const { questions } = parseQuestions(decrypted);
-          
+
           if (questions && questions.length > 0) {
             const savePath = SafeDirs.STUDENT + fileName;
             // Overwrite local file with correctly decrypted content
@@ -1244,7 +1244,7 @@ export default function App() {
   const listDatFiles = async (folderPath, options = {}) => {
     const { isStudent = false, authorId: forcedAuthorId = null } = options;
     await ensureQuizDirectories();
-    
+
     // Рекурсивный поиск в SafeDirs.DOWNLOADS, если это путь к корню загрузок
     if (folderPath === SafeDirs.DOWNLOADS) {
       let allRecords = [];
@@ -1283,7 +1283,7 @@ export default function App() {
         const decrypted = decodeEncryptedPayload(encrypted);
         const { questions, metadata } = parseQuestions(decrypted);
         questionCount = questions ? questions.length : 0;
-        
+
         // Если в метаданных есть заголовок, используем его
         if (metadata && metadata.title) {
           displayName = metadata.title;
@@ -1359,7 +1359,7 @@ export default function App() {
     const studentFiles = await listDatFiles(SafeDirs.STUDENT, { isStudent: true });
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS, { isStudent: true });
     const files = [...studentFiles, ...downloadedFiles];
-    
+
     // Загружаем список просмотренных тестов
     const seenRaw = await AsyncStorage.getItem(CACHE_KEYS.SEEN_TESTS);
     const seen = seenRaw ? JSON.parse(seenRaw) : [];
@@ -1378,7 +1378,7 @@ export default function App() {
       if (statusRaw) {
         try { status = JSON.parse(statusRaw); } catch { status = null; }
       }
-      
+
       const isSeen = seen.includes(testId);
       const results = status?.results || [];
       const score = results.filter(r => r.correct).length;
@@ -1427,7 +1427,7 @@ export default function App() {
     // В режиме учителя показываем свои тесты и тесты из папки загрузок
     const ownFiles = await listDatFiles(SafeDirs.TEACHER);
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS);
-    
+
     const allFiles = [...ownFiles, ...downloadedFiles].sort((a, b) => b.mtime - a.mtime);
     setTeacherLibraryFiles(allFiles);
     return allFiles;
@@ -2078,7 +2078,7 @@ export default function App() {
       const resolvedUrl = validateQuizUrl(cleanUrl, allowedQuizHosts);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-      
+
       let res;
       try {
         res = await fetch(resolvedUrl, { signal: controller.signal });
@@ -2582,7 +2582,7 @@ export default function App() {
                     • <Text style={{ fontWeight: '700' }}>Облако:</Text> Для работы с GitHub укажите ваш <Text style={{ color: C.accent }}>Username</Text> и <Text style={{ color: C.accent }}>Token</Text> в профиле.{"\n"}
                     • <Text style={{ fontWeight: '700' }}>Синхронизация:</Text> Все изменения в репозитории <Text style={{ fontStyle: 'italic' }}>quiz-app-data</Text> отслеживаются автоматически.{"\n"}
                     • <Text style={{ fontWeight: '700' }}>Безопасность:</Text> Файлы <Text style={{ color: C.success }}>.dat</Text> шифруются ключом приложения.{"\n"}
-                    • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка со значком облака в управлении тестами загружает ваш тест для всех учеников.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка со значком облака в управлении тестами загружает ваш тест в общую базу <Text style={{ color: C.accent }}>Мастера тестов</Text> для всех учеников.{"\n"}
                     • <Text style={{ color: C.textSecondary, fontSize: 16, marginTop: 10 }}>Листайте вниз для доступа к Dev Tools.</Text>
                   </Text>
                 </Card>
@@ -2631,17 +2631,17 @@ export default function App() {
                 <Card style={{ padding: 16, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 24, marginBottom: 20 }}>
                   <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 12 }}>🛠 Инструменты разработчика</Text>
                   <View style={{ alignItems: 'center' }}>
-                    <Btn 
-                      label="Сбросить все блокировки тестов" 
-                      onPress={handleResetCooldowns} 
-                      variant="black" 
+                    <Btn
+                      label="Сбросить все блокировки тестов"
+                      onPress={handleResetCooldowns}
+                      variant="black"
                       style={{ width: '90%', height: 44, marginBottom: 12 }}
                       textStyle={{ fontSize: 13 }}
                     />
-                    <Btn 
-                      label="Сбросить кулдаун синхронизации" 
-                      onPress={handleResetSyncCooldowns} 
-                      variant="black" 
+                    <Btn
+                      label="Сбросить кулдаун синхронизации"
+                      onPress={handleResetSyncCooldowns}
+                      variant="black"
                       style={{ width: '90%', height: 44 }}
                       textStyle={{ fontSize: 13 }}
                     />
@@ -2828,9 +2828,9 @@ export default function App() {
                         <TouchableOpacity
                           onPress={() => handleOpenStudentQuiz(item)}
                           style={[
-                            styles.fileActionBtn, 
-                            { 
-                              backgroundColor: isLocked ? C.border : (isSystem && !isCompleted ? C.accent : 'transparent'), 
+                            styles.fileActionBtn,
+                            {
+                              backgroundColor: isLocked ? C.border : (isSystem && !isCompleted ? C.accent : 'transparent'),
                               marginRight: (isSystem && !isCompleted) ? 0 : 8,
                               borderColor: (isSystem && !isCompleted) ? C.accent : C.border,
                               width: (isSystem && !isCompleted) ? 'auto' : 40,
@@ -2865,7 +2865,7 @@ export default function App() {
                         {(() => {
                           const isCloud = !!item.authorId;
                           const isOrphaned = status.isOrphaned;
-                          
+
                           // Показываем кнопку управления (Hide) для системы только после прохождения.
                           // Для остальных облачных тестов - только если пройден или сирота.
                           // Для локальных - всегда.
@@ -3295,9 +3295,9 @@ export default function App() {
                 <Text style={[styles.welcomeDesc, { marginBottom: 30 }]}>
                   Для управления облачными тестами необходимо авторизоваться в GitHub через настройки вашего профиля.
                 </Text>
-                <Btn 
-                  label="Перейти в профиль" 
-                  onPress={() => setScreen('teacher-profile')} 
+                <Btn
+                  label="Перейти в профиль"
+                  onPress={() => setScreen('teacher-profile')}
                   style={{ paddingHorizontal: 32, backgroundColor: '#FFD700' }}
                   textStyle={{ color: '#111' }}
                 />

@@ -10,7 +10,7 @@ export const COOLDOWN_SETTINGS = {
   MS: 1 * 60 * 60 * 1000,
 };
 
-export const API_TIMEOUT = 10000;
+export const API_TIMEOUT = 5000;
 
 const _QUIZ_DIRS = {
   get ROOT() { return `${FileSystem.documentDirectory || ''}Quizzes/`; },
@@ -55,7 +55,7 @@ export { _GITHUB_CONFIG as GITHUB_CONFIG };
 
 const _MASTER_TEACHER = {
   id: 'master',
-  name: 'Master-Teacher',
+  name: 'Мастер тестов',
   get owner() { return GITHUB_OWNER; },
   get repo() { return GITHUB_REPO; },
   get password() { return '777'; },
