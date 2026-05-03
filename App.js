@@ -476,12 +476,15 @@ export default function App() {
   // GITHUB CLOUD HELPERS
   // ─────────────────────────────────────────────
   const githubRequest = async (path, method = 'GET', body = null, customCreds = null) => {
-    // Priority: customCreds -> teacherProfile -> ENV
     const activeToken = customCreds?.token || teacherProfile?.token || GITHUB_CONFIG.TOKEN;
     const activeOwner = customCreds?.owner || teacherProfile?.owner || GITHUB_CONFIG.OWNER;
     const activeRepo = customCreds?.repo || teacherProfile?.repo || GITHUB_CONFIG.REPO;
 
-    if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
+    const isMasterSource = activeOwner === 'EvgeniyKrasnyanskiy';
+    
+    if (method === 'GET' && isMasterSource) {
+      console.log(`[GitHubAPI] Public access for ${activeOwner}/${activeRepo}`);
+    } else if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
       throw new Error('GitHub Token не настроен. Проверьте профиль или .env');
     }
 
@@ -492,10 +495,12 @@ export default function App() {
     const url = `${apiBase}/${encodedPath}`;
 
     const headers = {
-      'Authorization': `token ${activeToken}`,
       'Accept': 'application/vnd.github.v3+json',
       'Content-Type': 'application/json',
     };
+    if (activeToken && activeToken !== 'ВАШ_GITHUB_TOKEN') {
+      headers['Authorization'] = `token ${activeToken}`;
+    }
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
 
@@ -1077,20 +1082,31 @@ export default function App() {
       const tests = registry.tests || [];
       console.log(`[MasterSync] Registry loaded, found ${tests.length} tests.`);
 
-      // 2. Обработка автора из реестра для подписок
+      // 2. Обработка автора из реестра для подписок + Дедупликация
       const authorName = registry.author || registry.username || 'Master Source';
+      const masterOwner = 'EvgeniyKrasnyanskiy';
       const subId = `master-public-${registry.id || 'reg'}`;
       
-      if (!subscriptions.some(s => s.name === authorName || s.id === subId)) {
-        const newSub = {
+      setSubscriptions(prev => {
+        const base = (prev || []).filter(s => s && (s.owner || s.username));
+        const hasMaster = base.some(s => s.owner === masterOwner || s.id === subId);
+        
+        const nextSubs = hasMaster ? [...base] : [...base, {
           id: subId,
           name: authorName,
-          owner: 'EvgeniyKrasnyanskiy',
+          owner: masterOwner,
           repo: 'quiz-app-data',
           isMaster: true
-        };
-        setSubscriptions(prev => [...prev, newSub]);
-      }
+        }];
+
+        const seen = new Set();
+        return nextSubs.filter(s => {
+          const key = (s.owner || s.username || s.name || '').toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      });
 
       // 3. Итерируем по тестам и скачиваем .dat файлы
       for (const test of tests) {
