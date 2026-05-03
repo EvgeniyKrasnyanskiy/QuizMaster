@@ -481,12 +481,8 @@ export default function App() {
     const activeOwner = customCreds?.owner || teacherProfile?.owner || GITHUB_CONFIG.OWNER;
     const activeRepo = customCreds?.repo || teacherProfile?.repo || GITHUB_CONFIG.REPO;
 
-    const isMasterSource = activeOwner === 'EvgeniyKrasnyanskiy' || customCreds?.isMaster;
-    
-    if (method === 'GET' && isMasterSource) {
-      // Молчаливо продолжаем для публичного мастер-источника
-    } else if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
-      throw new Error('GitHub Token не настроен. Проверьте профиль или .env');
+    if (method !== 'GET' && (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN')) {
+      throw new Error('GitHub Token не настроен. Для записи/удаления тестов необходим токен в профиле или .env');
     }
 
     const apiBase = customCreds?.apiBase || `https://api.github.com/repos/${activeOwner}/${activeRepo}/contents`;
