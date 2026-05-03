@@ -363,8 +363,12 @@ export const styles = StyleSheet.create({
   },
   optionCheckMark: {
     color: C.white,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    lineHeight: 20,
   },
   optionText: {
     flex: 1,

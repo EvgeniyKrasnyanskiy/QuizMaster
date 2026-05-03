@@ -2428,7 +2428,11 @@ export default function App() {
   const renderSmartActionModal = () => {
     if (!actionTargetTest) return null;
     const { item, status, testId, isHidden } = actionTargetTest;
-    if (item.authorId === 'System') return null; // Safety: system tests cannot be hidden/deleted
+    const isSystem = item.authorId === 'System';
+    const isCloud = !!item.authorId;
+    const isOrphaned = status.isOrphaned;
+
+    const canDelete = !isSystem && (!isCloud || isOrphaned);
 
     // StatusKey for deletion
     const fileName = item.path.split('/').pop();
@@ -2848,6 +2852,7 @@ export default function App() {
                             name={status.hasProgress ? "play-circle-outline" : "chevron-forward-outline"}
                             size={20}
                             color={isLocked ? C.textDisabled : (isSystem && !isCompleted ? C.white : C.accent)}
+                            style={(!status.hasProgress && !isSystem) ? { marginLeft: 2 } : {}}
                           />
                           {isSystem && !isCompleted && (
                             <Text style={{ color: C.white, fontSize: 13, fontWeight: '800', marginLeft: 6 }}>ЗАПУСТИТЬ</Text>
@@ -2864,13 +2869,13 @@ export default function App() {
                           </TouchableOpacity>
                         )}
 
-                        {/* 4. Смарт-кнопка управления (Modal) (скрыта для системы) */}
-                        {!isSystem && (() => {
+                        {/* 4. Смарт-кнопка управления (Modal) */}
+                        {(() => {
                           const isCloud = !!item.authorId;
                           const isOrphaned = status.isOrphaned;
-
-                          // Показываем кнопку только если завершен или удален из облака (сирота)
-                          if (!isCompleted && !isOrphaned && isCloud) return null;
+                          
+                          // Показываем кнопку управления если тест пройден, или это сирота, или это система (чтобы можно было скрыть)
+                          if (!isCompleted && !isOrphaned && isCloud && !isSystem) return null;
 
                           return (
                             <TouchableOpacity
