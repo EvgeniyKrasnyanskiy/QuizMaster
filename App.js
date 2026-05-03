@@ -2668,9 +2668,8 @@ export default function App() {
                   {renderConfigSection("Статус GitHub", {
                     Owner: teacherProfile?.owner || GITHUB_CONFIG.OWNER || 'не задан',
                     Repo: teacherProfile?.repo || GITHUB_CONFIG.REPO || 'не задан',
-                    Token: (teacherProfile?.token || GITHUB_CONFIG.TOKEN) ? '✅ Установлен' : '❌ Отсутствует',
-                    Environment: GITHUB_CONFIG.TOKEN ? 'ENV' : 'Profile',
-                    Connected: !!(teacherProfile?.owner || GITHUB_CONFIG.OWNER)
+                    Token: (teacherProfile?.token || GITHUB_CONFIG.TOKEN) ? 'Установлен' : 'Отсутствует',
+                    Connected: (teacherProfile?.owner || GITHUB_CONFIG.OWNER) ? '✅ Да' : '❌ Нет'
                   })}
                   {renderConfigSection("Удаленная конфигурация (CLOUD)", {
                     Title: config.title,
@@ -2684,8 +2683,8 @@ export default function App() {
                     label="Синхронизировать конфиг" 
                     onPress={() => loadConfig()} 
                     variant="ghost" 
-                    style={{ marginTop: 4, height: 36, borderColor: 'rgba(91, 139, 245, 0.3)' }}
-                    textStyle={{ fontSize: 11, color: C.accent }}
+                    style={{ marginTop: 4, height: 36, borderColor: C.success, borderWidth: 1 }}
+                    textStyle={{ fontSize: 11, color: C.success }}
                   />
                 </View>
 

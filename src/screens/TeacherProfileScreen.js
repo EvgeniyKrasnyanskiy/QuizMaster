@@ -397,12 +397,14 @@ export default function TeacherProfileScreen({
                 <Btn
                   label="Отмена"
                   variant="black"
-                  style={{ flex: 1, borderColor: C.border }}
+                  style={{ flex: 1, borderColor: C.danger, borderWidth: 1 }}
+                  textStyle={{ color: C.danger }}
                   onPress={() => setIsEditingConfig(false)}
                 />
                 <Btn
                   label="Сохранить"
-                  style={{ flex: 1, backgroundColor: C.success }}
+                  style={{ flex: 1, backgroundColor: '#FFD700' }}
+                  textStyle={{ color: '#111' }}
                   loading={configLoading}
                   onPress={async () => {
                     setConfigLoading(true);
