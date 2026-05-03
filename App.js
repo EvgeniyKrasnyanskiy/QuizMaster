@@ -2967,7 +2967,7 @@ export default function App() {
                   </View>
                 )}
               />
-              <Btn label="Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
+              <Btn label="📝 Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
               <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10 }} />
               <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10 }} />
             </View>
