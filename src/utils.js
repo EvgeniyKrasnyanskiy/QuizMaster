@@ -168,14 +168,36 @@ const splitSemicolonLine = (line) => {
   return parts;
 };
 
+// Helper: Decrypt and Parse together
+export const decryptAndParseFile = (payload) => {
+  const decrypted = decodeEncryptedPayload(payload);
+  return parseQuestions(decrypted);
+};
+
 export const parseQuestions = (csvText) => {
   const normalized = (csvText || '').replace(/^\uFEFF/, '');
   const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
 
-  return lines.map((line, index) => {
+  let metadata = null;
+  const questions = lines.map((line, index) => {
     // Агрессивная очистка от невидимых символов
     const cleanLine = line.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-    if (!cleanLine || cleanLine.startsWith('METADATA=')) {
+    if (!cleanLine) return null;
+
+    // Извлечение метаданных
+    if (cleanLine.startsWith('METADATA=')) {
+      try {
+        const metaStr = cleanLine.replace('METADATA=', '');
+        metadata = metadata || {};
+        metaStr.split(';').forEach(pair => {
+          const [key, ...valParts] = pair.split(':');
+          if (key && valParts.length > 0) {
+            metadata[key.trim().toLowerCase()] = valParts.join(':').trim();
+          }
+        });
+      } catch (e) {
+        console.warn("Metadata parse error:", e);
+      }
       return null;
     }
 
@@ -221,7 +243,8 @@ export const parseQuestions = (csvText) => {
       return { type: 'text', q: parts[1], hint: parts[2], a: parts[3] };
     }
 
-    // Просто пропускаем неизвестные типы строк (например, пустые или комментарии)
     return null;
   }).filter(Boolean);
+
+  return { questions, metadata };
 };

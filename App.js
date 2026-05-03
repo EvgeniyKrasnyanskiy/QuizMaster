@@ -35,6 +35,7 @@ import {
   buildCleanReportText,
   decodeEncryptedPayload,
   encodeEncryptedPayload,
+  decryptAndParseFile,
   formatNiceDate,
   formatTime,
   getStoredQuizMeta,
@@ -463,6 +464,7 @@ export default function App() {
     refreshStudentLibrary();
     refreshTeacherLibrary();
     checkForUpdates();
+    fetchMasterData();
   }, []);
 
   // Синхронизация при изменении подписок
@@ -1061,6 +1063,43 @@ export default function App() {
     }
   };
 
+  const fetchMasterData = async () => {
+    try {
+      if (!MASTER_SOURCE_URL) return;
+      console.log("[MasterSync] Starting public sync from:", MASTER_SOURCE_URL);
+      
+      const response = await fetch(MASTER_SOURCE_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const rawContent = await response.text();
+      const { questions, metadata } = decryptAndParseFile(rawContent);
+
+      if (questions && questions.length > 0) {
+        const studentDir = SafeDirs.STUDENT;
+        const masterPath = studentDir + 'master_remote_data.dat';
+        await FileSystem.writeAsStringAsync(masterPath, rawContent);
+        
+        if (metadata && (metadata.author || metadata.username)) {
+          const author = metadata.author || metadata.username;
+          if (!subscriptions.some(s => s.name === author)) {
+            const newSub = {
+              id: 'master-remote',
+              name: author,
+              owner: 'master',
+              repo: 'master-repo',
+              isMaster: true
+            };
+            setSubscriptions(prev => [...prev, newSub]);
+          }
+        }
+        await refreshStudentLibrary();
+        console.log("[MasterSync] Public master data updated successfully.");
+      }
+    } catch (e) {
+      console.log("[MasterSync] Skip or failed:", e.message);
+    }
+  };
+
   const recordTestCompletion = async (testName, authorId = '') => {
     try {
       const prefix = authorId ? `${authorId}_` : '';
@@ -1171,8 +1210,8 @@ export default function App() {
       try {
         const encrypted = await FileSystem.readAsStringAsync(fullPath, { encoding: FileSystem.EncodingType.UTF8 });
         const decrypted = decodeEncryptedPayload(encrypted);
-        const parsed = parseQuestions(decrypted);
-        questionCount = parsed.length;
+        const { questions } = parseQuestions(decrypted);
+        questionCount = questions ? questions.length : 0;
       } catch (e) {
         console.warn(`Error parsing metadata for ${name}:`, e);
       }
@@ -1303,7 +1342,8 @@ export default function App() {
   const loadQuizFromDatFile = async (path, name, authorId = '') => {
     const encrypted = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 });
     const decrypted = decodeEncryptedPayload(encrypted);
-    const parsed = parseQuestions(decrypted);
+    const { questions } = parseQuestions(decrypted);
+    const parsed = questions;
     if (!parsed || parsed.length === 0) {
       throw new Error('Файл не содержит корректных вопросов.');
     }
@@ -1389,7 +1429,7 @@ export default function App() {
         throw new Error(`Файл слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
       }
       const decryptedCSV = decodeEncryptedPayload(encryptedData);
-      const parsedQuestions = parseQuestions(decryptedCSV);
+      const { questions: parsedQuestions } = parseQuestions(decryptedCSV);
 
       if (!parsedQuestions || parsedQuestions.length === 0) {
         throw new Error('Файл не содержит корректных вопросов');
@@ -1438,7 +1478,8 @@ export default function App() {
       }
 
       const decrypted = decodeEncryptedPayload(encrypted);
-      const parsed = parseQuestions(decrypted);
+      const { questions } = parseQuestions(decrypted);
+      const parsed = questions;
 
       if (!parsed || parsed.length === 0) {
         throw new Error(
@@ -1804,7 +1845,10 @@ export default function App() {
   const handleSaveEditedQuiz = async () => {
     try {
       // 1. Валидируем контент
-      parseQuestions(editContent);
+      const { questions: validationParsed } = parseQuestions(editContent);
+      if (!validationParsed || validationParsed.length === 0) {
+        throw new Error('Файл не содержит корректных вопросов.');
+      }
 
       const rawName = editFileName.trim();
       if (!rawName) {
@@ -1845,7 +1889,8 @@ export default function App() {
         });
 
         // Обновляем в реестре (могли измениться вопросы)
-        const qCount = parseQuestions(editContent).length;
+        const { questions: validationParsed } = parseQuestions(editContent);
+        const qCount = validationParsed ? validationParsed.length : 0;
         await syncCloudRegistry('add', {
           id: stripDatExtension(finalName),
           title: getStoredQuizMeta(finalName).originalTitle,
@@ -1886,8 +1931,8 @@ export default function App() {
       const encrypted = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
       try {
         const decrypted = decodeEncryptedPayload(encrypted);
-        const parsed = parseQuestions(decrypted);
-        if (!parsed || parsed.length === 0) throw new Error();
+        const { questions } = parseQuestions(decrypted);
+        if (!questions || questions.length === 0) throw new Error();
       } catch {
         Alert.alert('Ошибка', 'Файл имеет неверный формат или поврежден.');
         return;
@@ -1934,8 +1979,8 @@ export default function App() {
 
       try {
         const decrypted = decodeEncryptedPayload(content);
-        const parsed = parseQuestions(decrypted);
-        if (!parsed || parsed.length === 0) throw new Error();
+        const { questions } = parseQuestions(decrypted);
+        if (!questions || questions.length === 0) throw new Error();
       } catch {
         Alert.alert('Ошибка', 'Контент по ссылке не является валидным тестом (.dat).');
         return;
