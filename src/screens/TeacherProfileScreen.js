@@ -41,13 +41,14 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, text
     style={[
       styles.btn,
       variant === 'black' && { backgroundColor: '#111' },
+      variant === 'gold' && { backgroundColor: '#FFD700', borderColor: '#FFA700', borderWidth: 1 },
       style
     ]}
   >
     {loading ? (
-      <ActivityIndicator color="#fff" />
+      <ActivityIndicator color={variant === 'gold' ? '#111' : "#fff"} />
     ) : (
-      <Text style={[styles.btnText, textStyle]}>{label}</Text>
+      <Text style={[styles.btnText, variant === 'gold' && { color: '#111', fontWeight: '800' }, textStyle]}>{label}</Text>
     )}
   </TouchableOpacity>
 );
@@ -280,7 +281,8 @@ export default function TeacherProfileScreen({
             label={isConnected ? "Проверить соединение" : "Сохранить и проверить"}
             onPress={validateAndSaveProfile}
             loading={loading}
-            style={{ marginTop: 20, backgroundColor: isConnected ? C.success : C.accent }}
+            variant={isConnected ? "success" : "gold"}
+            style={{ marginTop: 20 }}
           />
 
           {isConnected && (
@@ -429,8 +431,7 @@ export default function TeacherProfileScreen({
                 />
                 <Btn
                   label="Опубликовать в облако"
-                  style={{ backgroundColor: '#FFD700' }}
-                  textStyle={{ color: '#111' }}
+                  variant="gold"
                   loading={loading}
                   onPress={() => {
                     Alert.alert(

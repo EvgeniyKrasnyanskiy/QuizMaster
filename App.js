@@ -152,10 +152,11 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
         variant === 'success' ? C.success :
           variant === 'danger' ? C.danger :
             variant === 'ghost' ? 'transparent' :
-              variant === 'black' ? '#111' : C.surfaceHigh;
+              variant === 'black' ? '#111' :
+                variant === 'gold' ? '#FFD700' : C.surfaceHigh;
 
-  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : 'transparent');
-  const borderWidth = (variant === 'ghost' || variant === 'black') ? 1 : 0;
+  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : (variant === 'gold' ? '#FFA700' : 'transparent'));
+  const borderWidth = (variant === 'ghost' || variant === 'black' || variant === 'gold') ? 1 : 0;
 
   return (
     <TouchableOpacity
@@ -169,7 +170,7 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
         style,
       ]}
     >
-      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : C.white }, textStyle]}>
+      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : (variant === 'gold' ? '#111' : C.white) }, textStyle]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -2713,9 +2714,9 @@ export default function App() {
                   <Btn
                     label="Синхронизировать конфиг"
                     onPress={() => loadConfig()}
-                    variant="ghost"
-                    style={{ marginTop: 4, height: 36, borderColor: C.success, borderWidth: 1 }}
-                    textStyle={{ fontSize: 11, color: C.success }}
+                    variant="success"
+                    style={{ marginTop: 4, height: 36 }}
+                    textStyle={{ fontSize: 11 }}
                   />
                 </View>
 
@@ -2772,7 +2773,8 @@ export default function App() {
                   setResultsOrigin('teacher');
                   setScreen('teacher-library');
                 }}
-                style={{ height: 54, backgroundColor: '#FFA700' }}
+                variant="gold"
+                style={{ height: 54 }}
               />
               <Text style={{ textAlign: 'center', marginTop: 8, fontSize: 10, color: C.textDisabled, fontWeight: '600', letterSpacing: 0.5 }}>
                 СОЗДАНИЕ, РЕДАКТИРОВАНИЕ И ПУБЛИКАЦИЯ В ОБЛАКО
@@ -3423,8 +3425,8 @@ export default function App() {
                 <Btn
                   label="Перейти в профиль"
                   onPress={() => setScreen('teacher-profile')}
-                  style={{ paddingHorizontal: 32, backgroundColor: '#FFD700' }}
-                  textStyle={{ color: '#111' }}
+                  variant="gold"
+                  style={{ paddingHorizontal: 32 }}
                 />
               </View>
             ) : (
