@@ -211,19 +211,14 @@ export default function TeachersScreen({
 
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <TouchableOpacity
-                  onPress={() => toggleTeacherStatus(item, false)}
-                  style={{ padding: 8, opacity: !item.disabled ? 1 : 0.3 }}
-                  disabled={!item.disabled}
+                  onPress={() => toggleTeacherStatus(item, !item.disabled)}
+                  style={{ padding: 8 }}
                 >
-                  <Ionicons name="notifications" size={22} color={C.success} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => toggleTeacherStatus(item, true)}
-                  style={{ padding: 8, opacity: item.disabled ? 1 : 0.3 }}
-                  disabled={!!item.disabled}
-                >
-                  <Ionicons name="notifications-off" size={22} color={C.textSecondary} />
+                  <Ionicons 
+                    name={item.disabled ? "notifications-off-outline" : "notifications"} 
+                    size={22} 
+                    color={item.disabled ? C.textSecondary : C.success} 
+                  />
                 </TouchableOpacity>
 
                 {(!item.isMaster && item.id !== MASTER_TEACHER?.owner) ? (

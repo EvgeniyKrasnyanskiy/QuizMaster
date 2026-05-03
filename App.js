@@ -468,6 +468,15 @@ export default function App() {
     fetchMasterData();
   }, []);
 
+  // Синхронизация при изменении профиля учителя (логин)
+  useEffect(() => {
+    if (teacherProfile && teacherProfile.token) {
+      console.log("[Auth] Profile updated, triggering sync...");
+      refreshTeacherLibrary();
+      checkForUpdates();
+    }
+  }, [teacherProfile]);
+
   // Синхронизация при изменении подписок
   useEffect(() => {
     checkForUpdates();
@@ -2501,7 +2510,7 @@ export default function App() {
                     borderColor: C.border
                   }}
                 >
-                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>NEW</Text>
+                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>МОЙ ПРОФИЛЬ</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity

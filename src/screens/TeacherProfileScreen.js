@@ -145,7 +145,7 @@ export default function TeacherProfileScreen({
         const profileData = { owner, repo, token };
         await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profileData));
         setTeacherProfile(profileData);
-        Alert.alert("Успех", "Соединение установлено и проверено.");
+        Alert.alert("Успех", "Соединение установлено и проверено.", [{ text: "OK", onPress: () => onBack() }]);
       } else if (response.status === 404) {
         Alert.alert("Ошибка", "Репозиторий не найден. Проверьте правильность Username и Repo.");
       } else if (response.status === 401) {
@@ -299,7 +299,7 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>1. Создайте репозиторий</Text>
               <Text style={[styles.cardDesc, { marginBottom: 15 }]}>
-                Создайте публичный репозиторий на GitHub с названием <Text style={{ fontWeight: '700', color: C.white }}>quiz-app-data</Text> (важно точное имя!).
+                Создайте публичный репозиторий на GitHub. Название <Text style={{ fontWeight: '700', color: C.white }}>quiz-app-data</Text> является стандартным, но вы можете использовать любое другое.
               </Text>
 
               <Text style={[styles.label, { color: C.accent }]}>2. Инициализируйте реестр</Text>
@@ -318,7 +318,7 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>4. Подключитесь</Text>
               <Text style={[styles.cardDesc, { marginBottom: 20 }]}>
-                Введите ваш Username, название репозитория и полученный токен в форму настроек. Нажмите "Сохранить и проверить".
+                Введите ваш Username, название репозитория (по умолчанию 'quiz-app-data') и полученный токен в форму настроек. Нажмите "Сохранить и проверить".
               </Text>
 
               <Btn label="Понятно" onPress={() => setHelpVisible(false)} />
