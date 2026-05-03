@@ -29,19 +29,20 @@ const L = StyleSheet.create({
     fontWeight: '600',
   },
   abortBtn: {
-    marginTop: 8,
+    marginTop: 12,
     alignSelf: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: C.danger,
-    backgroundColor: 'transparent',
+    borderColor: '#FFA700',
+    backgroundColor: '#FFD700',
   },
   abortBtnText: {
-    color: C.danger,
+    color: '#111',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });
 
@@ -325,7 +326,7 @@ export default function QuizScreen({
 
             <TouchableOpacity
               onPress={handleAnswer}
-              style={[L.navBtn, { backgroundColor: C.accent, borderColor: C.accent, flex: 2 }]}
+              style={[L.navBtn, { backgroundColor: C.accent, borderColor: '#4A80F0', flex: 2 }]}
             >
               <Text style={[L.navBtnText, { color: C.white }]}>
                 {currentIsAnswered ? 'Обновить ответ' : 'Ответить'}
