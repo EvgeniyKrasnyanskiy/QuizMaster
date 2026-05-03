@@ -22,15 +22,15 @@ export const applyXOR = (input, key) => {
 const stringToHex = (str) => {
   let hex = '';
   for (let i = 0; i < str.length; i++) {
-    hex += str.charCodeAt(i).toString(16).padStart(4, '0');
+    hex += str.charCodeAt(i).toString(16).padStart(2, '0');
   }
   return hex;
 };
 
 const hexToString = (hex) => {
   let str = '';
-  for (let i = 0; i < hex.length; i += 4) {
-    str += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+  for (let i = 0; i < hex.length; i += 2) {
+    str += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
   }
   return str;
 };
@@ -46,13 +46,13 @@ export const encodeEncryptedPayload = (plainText) => {
 // Новая версия ДЕШИФРОВАНИЯ (без передачи ключа снаружи)
 export const decodeEncryptedPayload = (payload) => {
   const normalized = payload.trim();
-  if (normalized.length < 64 || !/^[0-9a-f]+$/i.test(normalized)) {
+  if (normalized.length < 32 || !/^[0-9a-f]+$/i.test(normalized)) {
     return normalized; 
   }
   try {
-    const dynamicPart = hexToString(normalized.slice(0, 64));
+    const dynamicPart = hexToString(normalized.slice(0, 32));
     const fullKey = dynamicPart + SECURITY_CONFIG.SALT;
-    const encryptedData = hexToString(normalized.slice(64));
+    const encryptedData = hexToString(normalized.slice(32));
     return applyXOR(encryptedData, fullKey);
   } catch (e) {
     console.error("Decoding error:", e);

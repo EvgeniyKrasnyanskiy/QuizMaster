@@ -704,9 +704,9 @@ export default function App() {
             const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${item.fileName}`;
             const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
             if (cloudFile && cloudFile.content) {
-              await FileSystem.writeAsStringAsync(localPath, cloudFile.content, {
-                encoding: FileSystem.EncodingType.Base64
-              });
+              const binary = atob(cloudFile.content.replace(/\n/g, ''));
+              const decrypted = decodeEncryptedPayload(binary);
+              await FileSystem.writeAsStringAsync(localPath, decrypted);
               downloadedCount++;
             }
           } catch (e) {
@@ -1127,11 +1127,12 @@ export default function App() {
           if (!fileRes.ok) continue;
 
           const rawContent = await fileRes.text();
-          const { questions } = decryptAndParseFile(rawContent);
+          const decrypted = decodeEncryptedPayload(rawContent);
+          const { questions } = parseQuestions(decrypted);
           
           if (questions && questions.length > 0) {
             const savePath = SafeDirs.STUDENT + fileName;
-            await FileSystem.writeAsStringAsync(savePath, rawContent);
+            await FileSystem.writeAsStringAsync(savePath, decrypted);
           }
         } catch (fileErr) {
           console.log(`[MasterSync] Failed to sync ${fileName}:`, fileErr.message);
