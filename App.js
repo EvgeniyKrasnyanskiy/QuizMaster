@@ -2467,8 +2467,7 @@ export default function App() {
             <Btn
               label="Закрыть"
               onPress={() => setActionModalVisible(false)}
-              variant="black"
-              style={{ marginTop: 20 }}
+              style={{ marginTop: 20, backgroundColor: C.surfaceHigh, borderWidth: 0 }}
               textStyle={{ color: '#00BFFF' }}
             />
           </View>
