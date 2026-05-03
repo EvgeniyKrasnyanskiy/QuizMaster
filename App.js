@@ -147,7 +147,7 @@ const buildDatNameWithTimestamp = (baseName) => {
 // ─────────────────────────────────────────────
 // REUSABLE: Button
 // ─────────────────────────────────────────────
-const Btn = ({ label, onPress, disabled, variant = 'primary', style }) => {
+const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }) => {
   const bgColor =
     disabled ? C.border :
       variant === 'primary' ? C.accent :
@@ -170,7 +170,7 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style }) => {
         style,
       ]}
     >
-      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : C.white }]}>
+      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : C.white }, textStyle]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -2625,13 +2625,15 @@ export default function App() {
                       label="Сбросить все блокировки тестов" 
                       onPress={handleResetCooldowns} 
                       variant="black" 
-                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1, marginBottom: 12 }} 
+                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1, marginBottom: 12 }}
+                      textStyle={{ fontSize: 13 }}
                     />
                     <Btn 
                       label="Сбросить кулдаун синхронизации" 
                       onPress={handleResetSyncCooldowns} 
                       variant="black" 
-                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1 }} 
+                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1 }}
+                      textStyle={{ fontSize: 13 }}
                     />
                   </View>
                 </Card>
@@ -2927,7 +2929,7 @@ export default function App() {
                         <Ionicons name="create-outline" size={24} color={C.accent} />
                       </TouchableOpacity>
                     )}
-                    {item.canEdit && (
+                    {item.canEdit && teacherProfile?.token && (
                       <TouchableOpacity
                         onPress={() => {
                           const isPublished = cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name));
@@ -3258,47 +3260,62 @@ export default function App() {
               "Облако (GitHub)",
               () => setScreen('teacher-library')
             )}
-            <View style={L.libraryWrap}>
-              <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
-                Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
-              </Text>
-              <FlatList
-                data={cloudRegistry}
-                keyExtractor={(item) => item.id}
-                ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
-                renderItem={({ item }) => {
-                  if (!item || !item.id || !item.title) return null;
-                  return (
-                    <View style={styles.libraryRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.libraryTitle}>{item.title}</Text>
-                        <Text style={styles.libraryMeta}>
-                          ID: {item.id} | Вопросов: {item.qCount}
-                        </Text>
+            {!teacherProfile?.token ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+                <Ionicons name="cloud-offline-outline" size={80} color={C.textDisabled} />
+                <Text style={[styles.welcomeTitle, { marginTop: 20 }]}>Вход не выполнен</Text>
+                <Text style={[styles.welcomeDesc, { marginBottom: 30 }]}>
+                  Для управления облачными тестами необходимо авторизоваться в GitHub через настройки вашего профиля.
+                </Text>
+                <Btn 
+                  label="Перейти в профиль" 
+                  onPress={() => setScreen('teacher-profile')} 
+                  style={{ paddingHorizontal: 32 }}
+                />
+              </View>
+            ) : (
+              <View style={L.libraryWrap}>
+                <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
+                  Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
+                </Text>
+                <FlatList
+                  data={cloudRegistry}
+                  keyExtractor={(item) => item.id}
+                  ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
+                  renderItem={({ item }) => {
+                    if (!item || !item.id || !item.title) return null;
+                    return (
+                      <View style={styles.libraryRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.libraryTitle}>{item.title}</Text>
+                          <Text style={styles.libraryMeta}>
+                            ID: {item.id} | Вопросов: {item.qCount}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleOpenCloudFileEditor(item)}
+                          style={[styles.fileActionBtn, { marginRight: 8 }]}
+                        >
+                          <Ionicons name="create-outline" size={24} color={C.accent} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
+                          style={[styles.deleteBtn, { opacity: loading ? 0.5 : 1 }]}
+                          disabled={!!loading}
+                          accessibilityState={{ disabled: !!loading }}
+                        >
+                          {loading ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
+                          )}
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleOpenCloudFileEditor(item)}
-                        style={[styles.fileActionBtn, { marginRight: 8 }]}
-                      >
-                        <Ionicons name="create-outline" size={24} color={C.accent} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
-                        style={[styles.deleteBtn, { opacity: loading ? 0.5 : 1 }]}
-                        disabled={!!loading}
-                        accessibilityState={{ disabled: !!loading }}
-                      >
-                        {loading ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }}
-              />
-            </View>
+                    );
+                  }}
+                />
+              </View>
+            )}
           </View>
         );
       }
