@@ -1,20 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
-  Alert, ScrollView, Dimensions, Platform, FlatList,
+  Alert, ScrollView, Platform, FlatList,
   StatusBar, ActivityIndicator, KeyboardAvoidingView,
   Modal, SectionList, RefreshControl, Animated, Easing, ToastAndroid,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ✅ Совместимость с Expo SDK 54
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import * as MailComposer from 'expo-mail-composer';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Asset } from 'expo-asset';
 
 // ── Модули проекта ──
 import {
@@ -1150,10 +1148,7 @@ export default function App() {
           const rawContent = await fileRes.text();
           const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
           
-          console.log(`[MasterSync] Raw fetched (50 chars): ${rawContent.substring(0, 50)}`);
-          
           const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
-          console.log(`[MasterSync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
           
           const { questions } = parseQuestions(decrypted);
           

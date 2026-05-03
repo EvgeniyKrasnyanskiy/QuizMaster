@@ -28,6 +28,7 @@ const _CACHE_KEYS = {
   SUBSCRIPTIONS: 'app-subscriptions',
   TEACHER_PROFILE: 'teacher-profile',
   HIDDEN_TESTS: 'hidden-tests',
+  HIDE_SYSTEM_TESTS: 'hide-system-tests',
 };
 export { _CACHE_KEYS as CACHE_KEYS };
 

@@ -60,7 +60,6 @@ export default function QuizScreen({
 
   const [currentIdx, setCurrentIdx] = useState(initialData?.currentIdx || 0);
   const [results, setResults] = useState(initialData?.results || new Array(questions.length).fill(null));
-  const [userAnswers, setUserAnswers] = useState(initialData?.userAnswers || new Array(questions.length).fill(null));
   const [totalTime, setTotalTime] = useState(initialData?.totalTime || 0);
   const [questionStartTime, setQuestionStartTime] = useState(initialData?.questionStartTime || 0);
   const [questionTimes, setQuestionTimes] = useState(initialData?.questionTimes || new Array(questions.length).fill(0));
@@ -102,7 +101,6 @@ export default function QuizScreen({
       questions,
       currentIdx,
       results,
-      userAnswers,
       totalTime,
       questionStartTime,
       questionTimes,

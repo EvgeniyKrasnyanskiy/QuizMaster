@@ -218,6 +218,8 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.accent,
     borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
