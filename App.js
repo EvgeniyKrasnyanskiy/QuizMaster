@@ -156,7 +156,8 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
             variant === 'ghost' ? 'transparent' :
               variant === 'black' ? '#111' : C.surfaceHigh;
 
-  const borderColor = variant === 'ghost' ? C.border : 'transparent';
+  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : 'transparent');
+  const borderWidth = (variant === 'ghost' || variant === 'black') ? 1 : 0;
 
   return (
     <TouchableOpacity
@@ -166,7 +167,7 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
       activeOpacity={0.75}
       style={[
         styles.btn,
-        { backgroundColor: bgColor, borderColor, borderWidth: variant === 'ghost' ? 1 : 0 },
+        { backgroundColor: bgColor, borderColor, borderWidth },
         style,
       ]}
     >
@@ -2635,14 +2636,14 @@ export default function App() {
                       label="Сбросить все блокировки тестов" 
                       onPress={handleResetCooldowns} 
                       variant="black" 
-                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1, marginBottom: 12 }}
+                      style={{ width: '90%', height: 44, marginBottom: 12 }}
                       textStyle={{ fontSize: 13 }}
                     />
                     <Btn 
                       label="Сбросить кулдаун синхронизации" 
                       onPress={handleResetSyncCooldowns} 
                       variant="black" 
-                      style={{ width: '90%', height: 44, borderColor: C.danger, borderWidth: 1 }}
+                      style={{ width: '90%', height: 44 }}
                       textStyle={{ fontSize: 13 }}
                     />
                   </View>
