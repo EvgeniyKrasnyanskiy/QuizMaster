@@ -155,7 +155,7 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle, 
               variant === 'black' ? '#111' :
                 variant === 'gold' ? '#FFD700' : C.surfaceHigh;
 
-  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : (variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : 'transparent')));
+  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? '#FFD700' : (variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : 'transparent')));
   const borderWidth = (variant === 'ghost' || variant === 'black' || variant === 'gold' || variant === 'primary') ? 1 : 0;
 
   return (
@@ -3117,7 +3117,7 @@ export default function App() {
               />
               <Btn label="📝 Создать тест" onPress={handleCreateTeacherQuiz} variant="gold" style={{ marginTop: 12 }} />
               <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10, borderColor: '#FFD700' }} />
-              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10 }} />
+              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10, borderColor: C.danger }} />
             </View>
           </View>
         );

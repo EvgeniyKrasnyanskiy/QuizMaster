@@ -21,8 +21,8 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, chil
           variant === 'gold' ? '#FFD700' :
             variant === 'ghost' ? 'transparent' : C.accent;
 
-  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : 'transparent');
-  const borderWidth = (variant === 'gold' || variant === 'primary') ? 1 : 0;
+  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : (variant === 'black' ? '#FFD700' : 'transparent'));
+  const borderWidth = (variant === 'gold' || variant === 'primary' || variant === 'black') ? 1 : 0;
 
   return (
     <TouchableOpacity

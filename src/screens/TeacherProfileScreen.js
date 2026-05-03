@@ -41,8 +41,8 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, text
           variant === 'gold' ? '#FFD700' :
             variant === 'ghost' ? 'transparent' : C.accent;
 
-  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : (variant === 'ghost' ? C.accent : 'transparent'));
-  const borderWidth = (variant === 'gold' || variant === 'primary' || variant === 'ghost') ? 1 : 0;
+  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : (variant === 'black' ? '#FFD700' : 'transparent'));
+  const borderWidth = (variant === 'gold' || variant === 'primary' || variant === 'ghost' || variant === 'black') ? 1 : 0;
 
   return (
     <TouchableOpacity
@@ -419,8 +419,7 @@ export default function TeacherProfileScreen({
                 <Btn
                   label="Отмена"
                   variant="black"
-                  style={{ flex: 1, borderColor: C.danger, borderWidth: 1 }}
-                  textStyle={{ color: C.white }}
+                  style={{ flex: 1 }}
                   onPress={() => setIsEditingConfig(false)}
                 />
                 <Btn
