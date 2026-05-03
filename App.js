@@ -440,9 +440,9 @@ export default function App() {
           console.warn('ВНИМАНИЕ: Переменные окружения GitHub не загружены. Проверьте файл .env');
         }
 
-        const profileRaw = await AsyncStorage.getItem(CACHE_KEYS.TEACHER_PROFILE);
-        if (profileRaw) {
-          setTeacherProfile(JSON.parse(profileRaw));
+        const studentName = await AsyncStorage.getItem(CACHE_KEYS.STUDENT_NAME);
+        if (studentName) {
+          setUserName(studentName);
         }
 
         const hiddenRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDDEN_TESTS);
@@ -866,7 +866,6 @@ export default function App() {
       if (res) {
         const profile = { owner, repo, token };
         setTeacherProfile(profile);
-        await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profile));
         Alert.alert('Успех', 'Профиль учителя успешно настроен и проверен.');
         setScreen('teacher');
       }
@@ -970,7 +969,13 @@ export default function App() {
     const result = await AuthService.login(text);
     if (result.success) {
       refreshTeacherLibrary().finally(() => setScreen('teacher'));
-      setUserName('');
+      // Не очищаем userName здесь, так как он может понадобиться студенту, 
+      // а учитель переходит на другой экран. 
+      // Но если это был код входа, то лучше очистить, чтобы не светить его.
+      setUserName(''); 
+    } else {
+      // Если это не код входа, сохраняем как имя студента
+      await AsyncStorage.setItem(CACHE_KEYS.STUDENT_NAME, text);
     }
   };
 

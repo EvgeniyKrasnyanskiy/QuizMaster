@@ -141,7 +141,6 @@ export default function TeacherProfileScreen({
         }
 
         const profileData = { owner, repo, token };
-        await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profileData));
         setTeacherProfile(profileData);
         Alert.alert("Успех", "Соединение установлено и проверено.", [{ text: "OK", onPress: () => onBack() }]);
       } else if (response.status === 404) {
@@ -169,7 +168,6 @@ export default function TeacherProfileScreen({
           text: "Сбросить",
           style: "destructive",
           onPress: async () => {
-            await AsyncStorage.removeItem(CACHE_KEYS.TEACHER_PROFILE);
             setTeacherProfile(null);
             setTempProfile({ owner: '', repo: '', token: '' });
           }
