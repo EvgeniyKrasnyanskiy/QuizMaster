@@ -1426,6 +1426,43 @@ export default function App() {
     refreshStudentLibrary();
   };
 
+  const handleHideCompletedTests = async () => {
+    const idsToHide = [];
+    studentLibraryFiles.forEach(item => {
+      const status = studentQuizStatus[item.path] || {};
+      const isCompleted = !!(status.completedAt || (Array.isArray(status.results) && status.results.length > 0));
+      if (isCompleted) {
+        const testId = item.authorId ? `${item.authorId}_${stripDatExtension(item.displayName)}` : stripDatExtension(item.displayName);
+        if (!permanentlyHiddenIds.includes(testId)) {
+          idsToHide.push(testId);
+        }
+      }
+    });
+
+    if (idsToHide.length === 0) {
+      Alert.alert("Инфо", "Нет завершенных тестов для скрытия.");
+      return;
+    }
+
+    Alert.alert(
+      "Скрыть пройденные",
+      `Вы действительно хотите скрыть все завершенные тесты (${idsToHide.length})? Их можно будет вернуть через кнопку глаза в заголовке.`,
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Скрыть",
+          onPress: async () => {
+            const nextHidden = [...permanentlyHiddenIds, ...idsToHide];
+            setPermanentlyHiddenIds(nextHidden);
+            await AsyncStorage.setItem(CACHE_KEYS.HIDDEN_TESTS, JSON.stringify(nextHidden));
+            showToast(`Скрыто: ${idsToHide.length}`);
+            refreshStudentLibrary();
+          }
+        }
+      ]
+    );
+  };
+
   const handleDeleteTestPermanently = async (path, statusKey, testId) => {
     Alert.alert(
       "Удаление навсегда",
@@ -2830,6 +2867,10 @@ export default function App() {
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <TouchableOpacity onPress={() => setShowHiddenTests(!showHiddenTests)} style={[styles.fileActionBtn, { borderColor: showHiddenTests ? C.accent : C.border, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}>
                   <Ionicons name={showHiddenTests ? "eye-outline" : "eye-off-outline"} size={14} color={showHiddenTests ? C.accent : C.textSecondary} />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={handleHideCompletedTests} style={[styles.fileActionBtn, { borderColor: C.accent, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}>
+                  <Ionicons name="checkmark-done-outline" size={14} color={C.accent} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
