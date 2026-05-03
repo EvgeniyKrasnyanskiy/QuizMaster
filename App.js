@@ -1065,38 +1065,57 @@ export default function App() {
 
   const fetchMasterData = async () => {
     try {
-      if (!MASTER_SOURCE_URL) return;
-      console.log("[MasterSync] Starting public sync from:", MASTER_SOURCE_URL);
+      // 1. Загружаем registry.json (публично)
+      const baseUrl = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main';
+      const registryUrl = `${baseUrl}/registry.json`;
       
-      const response = await fetch(MASTER_SOURCE_URL);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      console.log("[MasterSync] Fetching registry:", registryUrl);
+      const regResponse = await fetch(registryUrl);
+      if (!regResponse.ok) throw new Error(`Registry HTTP ${regResponse.status}`);
       
-      const rawContent = await response.text();
-      const { questions, metadata } = decryptAndParseFile(rawContent);
+      const registry = await regResponse.json();
+      const tests = registry.tests || [];
+      console.log(`[MasterSync] Registry loaded, found ${tests.length} tests.`);
 
-      if (questions && questions.length > 0) {
-        const studentDir = SafeDirs.STUDENT;
-        const masterPath = studentDir + 'master_remote_data.dat';
-        await FileSystem.writeAsStringAsync(masterPath, rawContent);
-        
-        if (metadata && (metadata.author || metadata.username)) {
-          const author = metadata.author || metadata.username;
-          if (!subscriptions.some(s => s.name === author)) {
-            const newSub = {
-              id: 'master-remote',
-              name: author,
-              owner: 'master',
-              repo: 'master-repo',
-              isMaster: true
-            };
-            setSubscriptions(prev => [...prev, newSub]);
-          }
-        }
-        await refreshStudentLibrary();
-        console.log("[MasterSync] Public master data updated successfully.");
+      // 2. Обработка автора из реестра для подписок
+      const authorName = registry.author || registry.username || 'Master Source';
+      if (!subscriptions.some(s => s.name === authorName)) {
+        const newSub = {
+          id: 'master-public-reg',
+          name: authorName,
+          owner: 'EvgeniyKrasnyanskiy',
+          repo: 'quiz-app-data',
+          isMaster: true
+        };
+        setSubscriptions(prev => [...prev, newSub]);
       }
+
+      // 3. Итерируем по тестам и скачиваем .dat файлы
+      for (const test of tests) {
+        const fileName = test.file || `${test.id}.dat`;
+        const fileUrl = `${baseUrl}/tests/${fileName}`;
+        
+        try {
+          console.log(`[MasterSync] Syncing file: ${fileName}`);
+          const fileRes = await fetch(fileUrl);
+          if (!fileRes.ok) continue;
+
+          const rawContent = await fileRes.text();
+          const { questions } = decryptAndParseFile(rawContent);
+          
+          if (questions && questions.length > 0) {
+            const savePath = SafeDirs.STUDENT + fileName;
+            await FileSystem.writeAsStringAsync(savePath, rawContent);
+          }
+        } catch (fileErr) {
+          console.log(`[MasterSync] Failed to sync ${fileName}:`, fileErr.message);
+        }
+      }
+
+      await refreshStudentLibrary();
+      console.log("[MasterSync] Public registry sync completed.");
     } catch (e) {
-      console.log("[MasterSync] Skip or failed:", e.message);
+      console.log("[MasterSync] Registry sync skipped:", e.message);
     }
   };
 
