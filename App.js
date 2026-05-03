@@ -1352,12 +1352,10 @@ export default function App() {
     // Собираем из двух источников: локальная папка студента и папка загрузок
     const studentFiles = await listDatFiles(SafeDirs.STUDENT, { isStudent: true });
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS, { isStudent: true });
+    const files = [...studentFiles, ...downloadedFiles];
     
-    const allFiles = [...studentFiles, ...downloadedFiles].sort((a, b) => b.mtime - a.mtime);
-    setStudentLibraryFiles(allFiles);
-
-    const statusEntries = await Promise.all(allFiles.map(async (file) => {
-      // Ключи теперь зависят от автора
+    // Получаем статусы для всех файлов перед сортировкой
+    const fileDataEntries = await Promise.all(files.map(async (file) => {
       const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
       const progressKey = buildQuizProgressKey(file.displayName, file.authorId);
 
@@ -1367,21 +1365,41 @@ export default function App() {
 
       let status = null;
       if (statusRaw) {
-        try {
-          status = JSON.parse(statusRaw);
-        } catch {
-          status = null;
-        }
+        try { status = JSON.parse(statusRaw); } catch { status = null; }
       }
-      return [file.path, {
+      
+      const statusObj = {
         ...(status || {}),
         hasProgress: Boolean(progressRaw),
         isLocked,
         authorId: file.authorId,
         canEdit: file.canEdit
-      }];
+      };
+
+      return { file, status: statusObj };
     }));
-    setStudentQuizStatus(Object.fromEntries(statusEntries));
+
+    // Умная сортировка
+    const sortedData = fileDataEntries.sort((a, b) => {
+      const scoreA = (a.status && a.status.score !== undefined) ? a.status.score : null;
+      const scoreB = (b.status && b.status.score !== undefined) ? b.status.score : null;
+      
+      const isPlayedA = scoreA !== null && scoreA > 0;
+      const isPlayedB = scoreB !== null && scoreB > 0;
+
+      // 1. Непройденные (null или 0) выше пройденных
+      if (!isPlayedA && isPlayedB) return -1;
+      if (isPlayedA && !isPlayedB) return 1;
+
+      // 2. Внутри групп - по времени (новые сверху)
+      return b.file.mtime - a.file.mtime;
+    });
+
+    const allFiles = sortedData.map(d => d.file);
+    const statusMap = Object.fromEntries(sortedData.map(d => [d.file.path, d.status]));
+
+    setStudentLibraryFiles(allFiles);
+    setStudentQuizStatus(statusMap);
     return allFiles;
   };
 
