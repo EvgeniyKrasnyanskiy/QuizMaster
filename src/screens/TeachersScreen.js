@@ -80,7 +80,6 @@ export default function TeachersScreen({
     setLoading(true);
     try {
       const url = `https://api.github.com/repos/${username}/${repoName}`;
-      console.log(`[Subscription] Probing URL: ${url}`);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);

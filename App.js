@@ -404,9 +404,6 @@ export default function App() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      console.log('DEBUG CONFIG:', GITHUB_CONFIG.OWNER);
-      console.log('DEBUG DIRS:', SafeDirs.STUDENT);
-
       try {
         await ensureQuizDirectories();
         await initDemoQuiz();
@@ -472,7 +469,6 @@ export default function App() {
   // Синхронизация при изменении профиля учителя (логин)
   useEffect(() => {
     if (teacherProfile && teacherProfile.token) {
-      console.log("[Auth] Profile updated, triggering sync...");
       refreshTeacherLibrary();
       checkForUpdates();
     }
@@ -559,7 +555,7 @@ export default function App() {
           merged = [...merged, ...withAuthor];
         }
       } catch (e) {
-        console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
+        // Silent fail for background fetch
       }
     }
     return merged;
@@ -713,10 +709,7 @@ export default function App() {
             if (cloudFile && cloudFile.content) {
               const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
               const binary = atob(cloudFile.content.replace(/\n/g, ''));
-              
-              console.log(`[Sync] Raw fetched (50 chars): ${binary.substring(0, 50)}`);
               const decrypted = decodeEncryptedPayload(binary, effectiveSalt);
-              console.log(`[Sync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
               
               const { questions } = parseQuestions(decrypted);
               if (questions && questions.length > 0) {
@@ -2136,10 +2129,6 @@ export default function App() {
       const processedResults = sourceQuestions.map((q, i) => {
         const answer = rawAnswers[i];
 
-        if (i === 1) {
-          console.log('DEBUG Q2 Raw:', JSON.stringify(q));
-        }
-
         let isCorrect = false;
         let formattedAnswer = '';
 
@@ -2155,8 +2144,6 @@ export default function App() {
           const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
 
           isCorrect = userIndex === correctIdx;
-
-          console.log(`[RE-VERIFY] Q${i + 1}: User ${userIndex} vs Correct ${correctIdx} -> ${isCorrect}`);
           formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
         } else {
           // Улучшенная нормализация по просьбе пользователя
@@ -2164,7 +2151,6 @@ export default function App() {
           const correctStr = String(q.a || '').trim().toLowerCase();
           isCorrect = userStr === correctStr;
 
-          console.log(`[RE-VERIFY] Q${i + 1} TEXT: [User: "${userStr}"] vs [Correct: "${correctStr}"] -> ${isCorrect}`);
           formattedAnswer = String(answer).trim();
         }
 

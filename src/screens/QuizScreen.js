@@ -111,7 +111,7 @@ export default function QuizScreen({
     };
 
     AsyncStorage.setItem(activeProgressKey, JSON.stringify(payload)).catch(e => {
-      console.error("Failed to save progress", e);
+      // Silent fail
     });
   }, [currentIdx, results, totalTime]);
 
@@ -131,25 +131,17 @@ export default function QuizScreen({
       let formattedAnswer = '';
 
       if (q.type === 'multi') {
-        // Standardized extraction (0-based)
         const rawCorrect = Array.isArray(q.a) ? q.a[0] : q.a;
         const correctIdx = parseInt(rawCorrect, 10);
-
         const selectedIndices = (Array.isArray(answer) ? answer : []).map(idx => parseInt(idx, 10)).filter(v => !isNaN(v));
         const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
 
         isCorrect = !isNaN(correctIdx) && userIndex === correctIdx;
-
-        console.log(`[QUIZ] Q${i + 1}: User ${userIndex} vs Correct ${correctIdx} -> ${isCorrect}`);
-
         formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
       } else {
         const userStr = String(answer || '').trim().toLowerCase();
         const correctStr = String(q.a || '').trim().toLowerCase();
         isCorrect = userStr === correctStr;
-
-        console.log(`Comparing TEXT: [User: "${userStr}"] to [Correct: "${correctStr}"] -> ${isCorrect}`);
-
         formattedAnswer = String(answer).trim();
       }
 

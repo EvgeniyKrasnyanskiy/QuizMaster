@@ -38,8 +38,6 @@ export default function TeacherProfileScreen({
   onBack,
   title
 }) {
-  console.log('Profile Rendering', { hasProfile: !!teacherProfile });
-
   const [loading, setLoading] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
   const [tempProfile, setTempProfile] = useState({
