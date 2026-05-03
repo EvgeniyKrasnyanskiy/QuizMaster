@@ -23,6 +23,11 @@ import {
   CACHE_KEYS, SYNCABLE_CONFIG_KEYS, DEFAULT_ALLOWED_CONTENT_TYPES,
   API_ENDPOINTS, COOLDOWN_SETTINGS, APP_METADATA, MASTER_TEACHER, LOCAL_TEACHER_NAME, API_TIMEOUT
 } from './src/constants';
+
+// Safety checks for lazy-loaded constants
+const SafeDirs = QUIZ_DIRS || { ROOT: '', STUDENT: '', TEACHER: '', DOWNLOADS: '' };
+const SafeMaster = MASTER_TEACHER || { name: 'Master', password: '777' };
+const SafeFiles = FILES || { TRACKING_FILE: '' };
 import {
   buildQuizProgressKey,
   buildQuizStatusKey,
@@ -40,17 +45,14 @@ import { styles } from './src/styles';
 import QuizScreen from './src/screens/QuizScreen';
 import TeacherProfileScreen from './src/screens/TeacherProfileScreen';
 import TeachersScreen from './src/screens/TeachersScreen';
+import { AuthService } from './src/services/authService';
 
 // ── GitHub Configuration ──
-const { TOKEN: GITHUB_TOKEN, OWNER: REPO_OWNER, REPO: REPO_NAME, API_BASE: GITHUB_API_BASE, REGISTRY_PATH, CLOUD_TESTS_DIR, CONFIG_URL } = GITHUB_CONFIG;
-const { ROOT: QUIZ_ROOT_DIR, STUDENT: STUDENT_QUIZZES_DIR, TEACHER: TEACHER_QUIZZES_DIR } = QUIZ_DIRS;
-const { CONFIG: CONFIG_CACHE_KEY, COMPLETED_IDS: COMPLETED_IDS_KEY, SEEN_TESTS: SEEN_TESTS_KEY } = CACHE_KEYS;
-const { TRACKING_FILE } = FILES;
+// Destructuring removed to prevent runtime crashes if GITHUB_CONFIG is undefined at boot.
+// Direct access GITHUB_CONFIG.TOKEN, etc. is used inside functions.
+// Direct access to QUIZ_DIRS, CACHE_KEYS, and FILES is used inside functions to support Lazy Getters.
 
-// Проверка загрузки переменных окружения
-if (!GITHUB_TOKEN || !REPO_OWNER || !REPO_NAME) {
-  console.warn('ВНИМАНИЕ: Переменные окружения GitHub не загружены. Проверьте файл .env');
-}
+// Global env check moved to bootstrap useEffect to avoid early property access.
 
 // Constants removed (moved to appConfig.js)
 
@@ -364,7 +366,7 @@ export default function App() {
     const timeoutId = setTimeout(() => controller.abort(), 4000);
 
     try {
-      const res = await fetch(CONFIG_URL, { signal: controller.signal });
+      const res = await fetch(GITHUB_CONFIG.CONFIG_URL, { signal: controller.signal });
       if (!res.ok) throw new Error(`Config HTTP ${res.status}`);
       const json = await res.json();
       if (!json || typeof json !== 'object' || Array.isArray(json)) {
@@ -382,7 +384,7 @@ export default function App() {
         ...merged,
       }));
       setLocalConfig(merged);
-      await AsyncStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(merged));
+      await AsyncStorage.setItem(CACHE_KEYS.CONFIG, JSON.stringify(merged));
       if (!silent) {
         Alert.alert('Синхронизация завершена', 'Параметры успешно обновлены из удаленного конфига.');
       }
@@ -398,12 +400,15 @@ export default function App() {
 
   useEffect(() => {
     const bootstrap = async () => {
+      console.log('DEBUG CONFIG:', GITHUB_CONFIG.OWNER);
+      console.log('DEBUG DIRS:', SafeDirs.STUDENT);
+
       try {
         await ensureQuizDirectories();
         await initDemoQuiz();
 
         // Load configurations
-        const cached = await AsyncStorage.getItem(CONFIG_CACHE_KEY);
+        const cached = await AsyncStorage.getItem(CACHE_KEYS.CONFIG);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -428,6 +433,11 @@ export default function App() {
         } else {
           // Если данных нет вообще, инициализируем мастером
           setSubscriptions([MASTER_TEACHER]);
+        }
+
+        // Проверка загрузки переменных окружения
+        if (!GITHUB_CONFIG.TOKEN || !GITHUB_CONFIG.OWNER || !GITHUB_CONFIG.REPO) {
+          console.warn('ВНИМАНИЕ: Переменные окружения GitHub не загружены. Проверьте файл .env');
         }
 
         const profileRaw = await AsyncStorage.getItem(CACHE_KEYS.TEACHER_PROFILE);
@@ -464,9 +474,9 @@ export default function App() {
   // ─────────────────────────────────────────────
   const githubRequest = async (path, method = 'GET', body = null, customCreds = null) => {
     // Priority: customCreds -> teacherProfile -> ENV
-    const activeToken = customCreds?.token || teacherProfile?.token || GITHUB_TOKEN;
-    const activeOwner = customCreds?.owner || teacherProfile?.owner || REPO_OWNER;
-    const activeRepo = customCreds?.repo || teacherProfile?.repo || REPO_NAME;
+    const activeToken = customCreds?.token || teacherProfile?.token || GITHUB_CONFIG.TOKEN;
+    const activeOwner = customCreds?.owner || teacherProfile?.owner || GITHUB_CONFIG.OWNER;
+    const activeRepo = customCreds?.repo || teacherProfile?.repo || GITHUB_CONFIG.REPO;
 
     if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
       throw new Error('GitHub Token не настроен. Проверьте профиль или .env');
@@ -509,7 +519,7 @@ export default function App() {
 
   const fetchCloudRegistry = async () => {
     let merged = [];
-    for (const sub of subscriptions) {
+    for (const sub of (subscriptions || [])) {
       if (sub.disabled) continue;
       try {
         const creds = {
@@ -517,7 +527,7 @@ export default function App() {
           repo: sub.repo,
           token: sub.token || undefined // Students usually don't have tokens for others
         };
-        const data = await githubRequest(REGISTRY_PATH, 'GET', null, creds);
+        const data = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
         if (data && data.content) {
           const decoded = atob(data.content.replace(/\n/g, ''));
           const registry = JSON.parse(decoded);
@@ -539,7 +549,7 @@ export default function App() {
   };
 
   const syncCloudRegistry = async (action, testMeta) => {
-    const currentFile = await githubRequest(REGISTRY_PATH);
+    const currentFile = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH);
     let registry = [];
     let sha = null;
 
@@ -557,7 +567,7 @@ export default function App() {
     }
 
     const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(registry, null, 2))));
-    await githubRequest(REGISTRY_PATH, 'PUT', {
+    await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'PUT', {
       message: `Registry update: ${action} ${testMeta.id}`,
       content: newContent,
       sha: sha || undefined
@@ -575,6 +585,12 @@ export default function App() {
       return;
     }
 
+    // Проверка прав (Permission check)
+    if (file.authorId && file.authorId !== teacherProfile?.owner) {
+      Alert.alert("Доступ запрещен", "Вы не можете изменять чужие тесты");
+      return;
+    }
+
     try {
       setLoading(true);
       const meta = getStoredQuizMeta(file.name);
@@ -583,7 +599,7 @@ export default function App() {
         encoding: FileSystem.EncodingType.Base64
       });
 
-      const cloudFilePath = `${CLOUD_TESTS_DIR}/${file.name}`;
+      const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${file.name}`;
       const existingFile = await githubRequest(cloudFilePath);
 
       await githubRequest(cloudFilePath, 'PUT', {
@@ -617,7 +633,7 @@ export default function App() {
           try {
             setLoading(true);
             const testId = stripDatExtension(file.name);
-            const cloudFilePath = `${CLOUD_TESTS_DIR}/${file.name}`;
+            const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${file.name}`;
             const existingFile = await githubRequest(cloudFilePath);
             if (existingFile) {
               await githubRequest(cloudFilePath, 'DELETE', {
@@ -661,15 +677,21 @@ export default function App() {
 
       let downloadedCount = 0;
       for (const item of registry) {
-        // Изоляция: имя_автора + оригинальное_имя
-        const localName = `${item.authorId}_${item.fileName}`;
-        const localPath = STUDENT_QUIZZES_DIR + localName;
+        // Изоляция: папка автора + оригинальное имя
+        const authorDir = `${DOWNLOADS_DIR}${item.authorId}/`;
+        const localPath = `${authorDir}${item.fileName}`;
+
+        // Убеждаемся, что папка автора существует
+        const dirInfo = await FileSystem.getInfoAsync(authorDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(authorDir, { intermediates: true });
+        }
 
         const exists = await FileSystem.getInfoAsync(localPath);
         if (!exists.exists) {
           try {
             const creds = { owner: item.authorId, repo: item.repo || 'quiz-app-data' };
-            const cloudFilePath = `${CLOUD_TESTS_DIR}/${item.fileName}`;
+            const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${item.fileName}`;
             const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
             if (cloudFile && cloudFile.content) {
               await FileSystem.writeAsStringAsync(localPath, cloudFile.content, {
@@ -683,41 +705,42 @@ export default function App() {
         }
       }
 
-      // Очистка "призраков": удаляем локальные файлы, которых нет в облаке и которые не пройдены
+      // Очистка "призраков" в папке загрузок
       try {
-        const localFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
-        for (const fileName of localFiles) {
-          // Пропускаем ручные файлы и системные демки
-          if (!fileName.includes('_') || fileName.startsWith('System_')) continue;
+        if ((await FileSystem.getInfoAsync(DOWNLOADS_DIR)).exists) {
+          const authorFolders = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR);
+          for (const authorId of authorFolders) {
+            const authorDir = `${DOWNLOADS_DIR}${authorId}/`;
+            const files = await FileSystem.readDirectoryAsync(authorDir);
+            
+            for (const fileName of files) {
+              const isStillInCloud = registry.some(item => item.authorId === authorId && item.fileName === fileName);
+              const statusKey = buildQuizStatusKey(fileName, authorId);
+              const statusRaw = await AsyncStorage.getItem(statusKey);
+              let status = statusRaw ? JSON.parse(statusRaw) : null;
 
-          const isStillInCloud = registry.some(item => `${item.authorId}_${item.fileName}` === fileName);
-          const statusKey = buildQuizStatusKey(fileName);
-          const statusRaw = await AsyncStorage.getItem(statusKey);
-          let status = statusRaw ? JSON.parse(statusRaw) : null;
+              if (!isStillInCloud) {
+                const progressKey = buildQuizProgressKey(fileName, authorId);
+                const progressRaw = await AsyncStorage.getItem(progressKey);
+                const hasProgress = Boolean(progressRaw);
+                const isCompleted = status?.completedAt || (Array.isArray(status?.results) && status?.results.length > 0);
 
-          if (!isStillInCloud) {
-            const progressKey = buildQuizProgressKey(fileName);
-            const progressRaw = await AsyncStorage.getItem(progressKey);
-            const hasProgress = Boolean(progressRaw);
-            const isCompleted = status?.completedAt || (Array.isArray(status?.results) && status?.results.length > 0);
-
-            // Проверяем: если не пройден и нет прогресса — удаляем.
-            if (!isCompleted && !hasProgress) {
-              await FileSystem.deleteAsync(STUDENT_QUIZZES_DIR + fileName, { idempotent: true });
-              console.log(`Cleaned up ghost file: ${fileName}`);
-            } else {
-              // Помечаем как "сироту", если пройден или в процессе, но удален из облака
-              if (!status || !status.isOrphaned) {
-                const currentStatus = status || {};
-                currentStatus.isOrphaned = true;
-                await AsyncStorage.setItem(statusKey, JSON.stringify(currentStatus));
+                if (!isCompleted && !hasProgress) {
+                  await FileSystem.deleteAsync(authorDir + fileName, { idempotent: true });
+                  console.log(`Cleaned up ghost file: ${authorId}/${fileName}`);
+                } else {
+                  if (!status || !status.isOrphaned) {
+                    const currentStatus = status || {};
+                    currentStatus.isOrphaned = true;
+                    await AsyncStorage.setItem(statusKey, JSON.stringify(currentStatus));
+                  }
+                }
+              } else {
+                if (status && status.isOrphaned) {
+                  status.isOrphaned = false;
+                  await AsyncStorage.setItem(statusKey, JSON.stringify(status));
+                }
               }
-            }
-          } else {
-            // Если вернулся в облако — снимаем пометку
-            if (status && status.isOrphaned) {
-              status.isOrphaned = false;
-              await AsyncStorage.setItem(statusKey, JSON.stringify(status));
             }
           }
         }
@@ -730,16 +753,19 @@ export default function App() {
         console.log(`Downloaded ${downloadedCount} new tests.`);
       }
 
-      // Считаем новые тесты
-      const localFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
-      const completedRaw = await AsyncStorage.getItem(COMPLETED_IDS_KEY);
+      // Считаем новые тесты (проверяем все подпапки DOWNLOADS)
+      const completedRaw = await AsyncStorage.getItem(CACHE_KEYS.COMPLETED_IDS);
       const completed = completedRaw ? JSON.parse(completedRaw) : [];
+      let activeNewCount = 0;
 
-      const activeNew = registry.filter(item => {
-        const localName = `${item.authorId}_${item.fileName}`;
-        return localFiles.includes(localName) && !completed.includes(`${item.authorId}_${item.id}`);
-      });
-      setNewTestsCount(activeNew.length);
+      for (const item of registry) {
+        const localPath = `${DOWNLOADS_DIR}${item.authorId}/${item.fileName}`;
+        const exists = await FileSystem.getInfoAsync(localPath);
+        if (exists.exists && !completed.includes(`${item.authorId}_${item.id}`)) {
+          activeNewCount++;
+        }
+      }
+      setNewTestsCount(activeNewCount);
       return downloadedCount;
     } catch (e) {
       console.log('Update check failed:', e.message);
@@ -778,7 +804,7 @@ export default function App() {
   const handleOpenCloudFileEditor = async (cloudItem) => {
     try {
       setLoading(true);
-      const cloudFilePath = `${CLOUD_TESTS_DIR}/${cloudItem.fileName}`;
+      const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${cloudItem.fileName}`;
       const cloudFile = await githubRequest(cloudFilePath);
       if (cloudFile && cloudFile.content) {
         // Декодируем из base64
@@ -835,7 +861,7 @@ export default function App() {
       setLoading(true);
       const creds = { owner: username, repo: 'quiz-app-data' }; // Default repo name as discussed
       // Checking if registry exists to verify
-      const res = await githubRequest(REGISTRY_PATH, 'GET', null, creds);
+      const res = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
 
       if (res) {
         const newSub = {
@@ -901,15 +927,19 @@ export default function App() {
       nextSubs.push(MASTER_TEACHER);
     }
     setSubscriptions(nextSubs);
-    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+                    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
     checkForUpdates();
     Alert.alert('Успех', 'Подписка на мастер-учителя восстановлена.');
   };
 
   // ── Определение режима учителя ──
-  const handleNameChange = (text) => {
+  const handleNameChange = async (text) => {
     setUserName(text);
-    if (text === config.adminCode) {
+    if (!text) return;
+
+    // Авторизация учителя через AuthService
+    const result = await AuthService.login(text);
+    if (result.success) {
       refreshTeacherLibrary().finally(() => setScreen('teacher'));
       setUserName('');
     }
@@ -993,25 +1023,34 @@ export default function App() {
   const reportEmail = typeof config.reportEmail === 'string' ? config.reportEmail.trim() : '';
 
   const ensureQuizDirectories = async () => {
-    const rootInfo = await FileSystem.getInfoAsync(QUIZ_ROOT_DIR);
-    if (!rootInfo.exists) await FileSystem.makeDirectoryAsync(QUIZ_ROOT_DIR, { intermediates: true });
-    const studentInfo = await FileSystem.getInfoAsync(STUDENT_QUIZZES_DIR);
-    if (!studentInfo.exists) await FileSystem.makeDirectoryAsync(STUDENT_QUIZZES_DIR, { intermediates: true });
-    const teacherInfo = await FileSystem.getInfoAsync(TEACHER_QUIZZES_DIR);
-    if (!teacherInfo.exists) await FileSystem.makeDirectoryAsync(TEACHER_QUIZZES_DIR, { intermediates: true });
+    const rootInfo = await FileSystem.getInfoAsync(SafeDirs.ROOT);
+    if (!rootInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.ROOT, { intermediates: true });
+    const studentInfo = await FileSystem.getInfoAsync(SafeDirs.STUDENT);
+    if (!studentInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.STUDENT, { intermediates: true });
+    const teacherInfo = await FileSystem.getInfoAsync(SafeDirs.TEACHER);
+    if (!teacherInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.TEACHER, { intermediates: true });
+    const downloadsInfo = await FileSystem.getInfoAsync(SafeDirs.DOWNLOADS);
+    if (!downloadsInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.DOWNLOADS, { intermediates: true });
   };
 
   const initDemoQuiz = async () => {
     try {
-      const studentFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
+      const studentFiles = await FileSystem.readDirectoryAsync(SafeDirs.STUDENT);
       // Если библиотека пуста (совсем первый запуск)
       if (studentFiles.length === 0) {
         console.log("Library is empty, initializing demo quiz...");
         const demoAsset = require('./assets/quizzes/demo_quiz.dat');
+        console.log("Demo source:", demoAsset);
         const asset = Asset.fromModule(demoAsset);
         await asset.downloadAsync();
 
-        const demoPath = STUDENT_QUIZZES_DIR + 'System_Welcome_Demo.dat';
+        const studentDir = SafeDirs.STUDENT;
+        if (!studentDir || studentDir.includes('undefined')) {
+          throw new Error("Student directory is not ready or undefined");
+        }
+
+        const demoPath = studentDir + 'System_Welcome_Demo.dat';
+        console.log("Initializing demo at:", demoPath);
         await FileSystem.copyAsync({ from: asset.localUri, to: demoPath });
         console.log("Demo quiz initialized successfully");
         await refreshStudentLibrary();
@@ -1027,13 +1066,13 @@ export default function App() {
       const key = (prefix + stripDatExtension(testName)).toLowerCase();
       console.log(`[Cooldown] Recording completion for key: ${key}`);
       let trackingData = {};
-      const info = await FileSystem.getInfoAsync(TRACKING_FILE);
+      const info = await FileSystem.getInfoAsync(SafeFiles.TRACKING_FILE);
       if (info.exists) {
-        const content = await FileSystem.readAsStringAsync(TRACKING_FILE);
+        const content = await FileSystem.readAsStringAsync(SafeFiles.TRACKING_FILE);
         trackingData = JSON.parse(content);
       }
       trackingData[key] = new Date().toISOString();
-      await FileSystem.writeAsStringAsync(TRACKING_FILE, JSON.stringify(trackingData));
+      await FileSystem.writeAsStringAsync(SafeFiles.TRACKING_FILE, JSON.stringify(trackingData));
     } catch (e) {
       console.error("Tracking error:", e);
     }
@@ -1043,10 +1082,10 @@ export default function App() {
     try {
       const prefix = authorId ? `${authorId}_` : '';
       const key = (prefix + stripDatExtension(testName)).toLowerCase();
-      const info = await FileSystem.getInfoAsync(TRACKING_FILE);
+      const info = await FileSystem.getInfoAsync(SafeFiles.TRACKING_FILE);
       if (!info.exists) return false;
 
-      const content = await FileSystem.readAsStringAsync(TRACKING_FILE);
+      const content = await FileSystem.readAsStringAsync(SafeFiles.TRACKING_FILE);
       const trackingData = JSON.parse(content);
       const lastCompletion = trackingData[key];
       if (!lastCompletion) return false;
@@ -1095,23 +1134,36 @@ export default function App() {
     return `через ${h} ч. ${m} мин.`;
   };
 
-  const listDatFiles = async (folderPath, isStudent = false) => {
+  const listDatFiles = async (folderPath, options = {}) => {
+    const { isStudent = false, authorId: forcedAuthorId = null } = options;
     await ensureQuizDirectories();
+    
+    // Рекурсивный поиск в DOWNLOADS_DIR, если это путь к корню загрузок
+    if (folderPath === SafeDirs.DOWNLOADS) {
+      let allRecords = [];
+      const authorFolders = await FileSystem.readDirectoryAsync(SafeDirs.DOWNLOADS);
+      for (const author of authorFolders) {
+        const subRecords = await listDatFiles(`${SafeDirs.DOWNLOADS}${author}/`, { isStudent, authorId: author });
+        allRecords = [...allRecords, ...subRecords];
+      }
+      return allRecords;
+    }
+
     const fileNames = await FileSystem.readDirectoryAsync(folderPath);
     const datNames = fileNames.filter(name => name.toLowerCase().endsWith('.dat'));
     const records = await Promise.all(datNames.map(async (name) => {
       const fullPath = `${folderPath}${name}`;
       const info = await FileSystem.getInfoAsync(fullPath);
       let questionCount = 0;
-      let authorId = null;
+      let authorId = forcedAuthorId;
       let displayName = name;
 
-      if (isStudent) {
-        // Извлекаем автора из имени файла (префикс до первого '_')
+      if (isStudent && !authorId) {
+        // Старая логика префиксов для файлов в STUDENT_QUIZZES_DIR
         if (name.includes('_')) {
           const parts = name.split('_');
           authorId = parts[0];
-          displayName = parts.slice(1).join('_'); // Если в названии теста тоже есть '_'
+          displayName = parts.slice(1).join('_');
         }
       }
 
@@ -1131,6 +1183,7 @@ export default function App() {
         size: typeof info.size === 'number' ? info.size : 0,
         mtime: typeof info.modificationTime === 'number' ? info.modificationTime : 0,
         questionCount,
+        canEdit: authorId === teacherProfile?.owner || folderPath === SafeDirs.TEACHER,
       };
     }));
     return records.sort((a, b) => b.mtime - a.mtime);
@@ -1182,9 +1235,14 @@ export default function App() {
   };
 
   const refreshStudentLibrary = async () => {
-    const files = await listDatFiles(STUDENT_QUIZZES_DIR, true);
-    setStudentLibraryFiles(files);
-    const statusEntries = await Promise.all(files.map(async (file) => {
+    // Собираем из двух источников: локальная папка студента и папка загрузок
+    const studentFiles = await listDatFiles(SafeDirs.STUDENT, { isStudent: true });
+    const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS, { isStudent: true });
+    
+    const allFiles = [...studentFiles, ...downloadedFiles].sort((a, b) => b.mtime - a.mtime);
+    setStudentLibraryFiles(allFiles);
+
+    const statusEntries = await Promise.all(allFiles.map(async (file) => {
       // Ключи теперь зависят от автора
       const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
       const progressKey = buildQuizProgressKey(file.displayName, file.authorId);
@@ -1205,17 +1263,22 @@ export default function App() {
         ...(status || {}),
         hasProgress: Boolean(progressRaw),
         isLocked,
-        authorId: file.authorId
+        authorId: file.authorId,
+        canEdit: file.canEdit
       }];
     }));
     setStudentQuizStatus(Object.fromEntries(statusEntries));
-    return files;
+    return allFiles;
   };
 
   const refreshTeacherLibrary = async () => {
-    const files = await listDatFiles(TEACHER_QUIZZES_DIR);
-    setTeacherLibraryFiles(files);
-    return files;
+    // В режиме учителя показываем свои тесты и тесты из папки загрузок
+    const ownFiles = await listDatFiles(SafeDirs.TEACHER);
+    const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS);
+    
+    const allFiles = [...ownFiles, ...downloadedFiles].sort((a, b) => b.mtime - a.mtime);
+    setTeacherLibraryFiles(allFiles);
+    return allFiles;
   };
 
   const saveDatToLibrary = async (folderPath, fileName, content) => {
@@ -1230,7 +1293,7 @@ export default function App() {
   const saveStudentDat = async (baseName, content) => {
     await ensureQuizDirectories();
     const normalizedName = `${makeSafeFileName(baseName)}.dat`;
-    const targetPath = `${STUDENT_QUIZZES_DIR}${normalizedName}`;
+    const targetPath = SafeDirs.STUDENT + normalizedName;
     const existing = await FileSystem.getInfoAsync(targetPath);
     await FileSystem.writeAsStringAsync(targetPath, content, { encoding: FileSystem.EncodingType.UTF8 });
     return { path: targetPath, name: normalizedName, overwritten: existing.exists };
@@ -1273,7 +1336,7 @@ export default function App() {
           encoding: FileSystem.EncodingType.UTF8,
         });
         const stampedName = makeSafeFileName(name);
-        await saveDatToLibrary(TEACHER_QUIZZES_DIR, stampedName, encrypted);
+        await saveDatToLibrary(SafeDirs.TEACHER, stampedName, encrypted);
         await refreshTeacherLibrary();
         Alert.alert('Готово', `Файл .dat импортирован в библиотеку: ${stampedName}`);
       } else {
@@ -1283,7 +1346,7 @@ export default function App() {
         const encrypted = encodeEncryptedPayload(sourceText);
         const baseName = name.replace(/\.[^.]+$/, '');
         const stampedName = `${makeSafeFileName(baseName)}.dat`;
-        await saveDatToLibrary(TEACHER_QUIZZES_DIR, stampedName, encrypted);
+        await saveDatToLibrary(SafeDirs.TEACHER, stampedName, encrypted);
         await refreshTeacherLibrary();
         Alert.alert('Готово', `Файл зашифрован и сохранен: ${stampedName}`);
       }
@@ -1482,12 +1545,12 @@ export default function App() {
 
         if (status?.completedAt) {
           // Отмечаем как просмотренный при открытии
-          const seenRaw = await AsyncStorage.getItem(SEEN_TESTS_KEY);
+          const seenRaw = await AsyncStorage.getItem(CACHE_KEYS.SEEN_TESTS);
           const seen = seenRaw ? JSON.parse(seenRaw) : [];
           const testId = `${file.authorId}_${stripDatExtension(file.displayName)}`;
           if (!seen.includes(testId)) {
             const nextSeen = [...seen, testId];
-            await AsyncStorage.setItem(SEEN_TESTS_KEY, JSON.stringify(nextSeen));
+            await AsyncStorage.setItem(CACHE_KEYS.SEEN_TESTS, JSON.stringify(nextSeen));
             setNewTestsCount(prev => Math.max(0, prev - 1));
           }
 
@@ -1524,12 +1587,12 @@ export default function App() {
           );
         } else {
           // Отмечаем как просмотренный при открытии
-          const seenRaw = await AsyncStorage.getItem(SEEN_TESTS_KEY);
+          const seenRaw = await AsyncStorage.getItem(CACHE_KEYS.SEEN_TESTS);
           const seen = seenRaw ? JSON.parse(seenRaw) : [];
           const testId = `${file.authorId}_${stripDatExtension(file.displayName)}`;
           if (!seen.includes(testId)) {
             const nextSeen = [...seen, testId];
-            await AsyncStorage.setItem(SEEN_TESTS_KEY, JSON.stringify(nextSeen));
+            await AsyncStorage.setItem(CACHE_KEYS.SEEN_TESTS, JSON.stringify(nextSeen));
             setNewTestsCount(prev => Math.max(0, prev - 1));
           }
           await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
@@ -1731,7 +1794,7 @@ export default function App() {
     const stampedName = fileName.toLowerCase().endsWith('.dat') ? fileName : `${fileName}.dat`;
     const normalizedName = makeSafeFileName(stampedName);
 
-    await saveDatToLibrary(TEACHER_QUIZZES_DIR, normalizedName, encrypted);
+    await saveDatToLibrary(SafeDirs.TEACHER, normalizedName, encrypted);
     await refreshTeacherLibrary();
     Alert.alert('Сохранено', `Тест "${normalizedName}" успешно сохранен.`);
     setScreen('teacher-library');
@@ -1764,14 +1827,14 @@ export default function App() {
         Alert.alert('Сохранено', 'Изменения записаны.');
       } else {
         // Если имя изменилось или это новый файл — создаем новый .dat
-        await saveDatToLibrary(TEACHER_QUIZZES_DIR, finalName, encrypted);
+        await saveDatToLibrary(SafeDirs.TEACHER, finalName, encrypted);
         Alert.alert('Сохранено', `Тест "${finalName}" успешно сохранен.`);
       }
 
       // 2. Если это облачный файл - обновляем и на GitHub
       if (editIsCloud) {
         const fileContentB64 = btoa(unescape(encodeURIComponent(encrypted)));
-        const cloudFilePath = `${CLOUD_TESTS_DIR}/${finalName}`;
+        const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${finalName}`;
         const existingFile = await githubRequest(cloudFilePath);
 
         await githubRequest(cloudFilePath, 'PUT', {
@@ -1829,7 +1892,7 @@ export default function App() {
         return;
       }
 
-      const targetPath = STUDENT_QUIZZES_DIR + fileName;
+      const targetPath = SafeDirs.STUDENT + fileName;
       await FileSystem.copyAsync({ from: asset.uri, to: targetPath });
       await refreshStudentLibrary();
       Alert.alert('Успех', `Тест "${fileName}" успешно добавлен.`);
@@ -1871,7 +1934,7 @@ export default function App() {
 
       let fileName = cleanUrl.split('/').pop().split('?')[0] || 'imported_quiz.dat';
       if (!fileName.toLowerCase().endsWith('.dat')) fileName += '.dat';
-      const targetPath = STUDENT_QUIZZES_DIR + fileName;
+      const targetPath = SafeDirs.STUDENT + fileName;
 
       await FileSystem.writeAsStringAsync(targetPath, content);
       await refreshStudentLibrary();
@@ -1986,11 +2049,11 @@ export default function App() {
 
     // Сохраняем ID как пройденный для умного счетчика
     const testId = `${activeAuthorId}_${stripDatExtension(testFileName)}`;
-    const completedRaw = await AsyncStorage.getItem(COMPLETED_IDS_KEY);
+    const completedRaw = await AsyncStorage.getItem(CACHE_KEYS.COMPLETED_IDS);
     const completed = completedRaw ? JSON.parse(completedRaw) : [];
     if (!completed.includes(testId)) {
       const nextCompleted = [...completed, testId];
-      await AsyncStorage.setItem(COMPLETED_IDS_KEY, JSON.stringify(nextCompleted));
+      await AsyncStorage.setItem(CACHE_KEYS.COMPLETED_IDS, JSON.stringify(nextCompleted));
       checkForUpdates(); // Пересчитываем счетчик мгновенно
     }
 
@@ -2055,7 +2118,7 @@ export default function App() {
         {
           text: "Сбросить", onPress: async () => {
             try {
-              await FileSystem.deleteAsync(TRACKING_FILE, { idempotent: true });
+              await FileSystem.deleteAsync(SafeFiles.TRACKING_FILE, { idempotent: true });
               await refreshStudentLibrary();
               Alert.alert("Успех", "Все блокировки тестов сброшены.");
             } catch (e) {
@@ -2120,7 +2183,7 @@ export default function App() {
         if (isSystem) {
           authorName = 'Обучающие тесты';
         } else if (isCloud) {
-          authorName = subscriptions.find(s => s.owner === file.authorId)?.name || MASTER_TEACHER.name;
+          authorName = (subscriptions || []).find(s => s.owner === file.authorId)?.name || SafeMaster.name;
         } else {
           authorName = LOCAL_TEACHER_NAME;
         }
@@ -2141,8 +2204,8 @@ export default function App() {
       if (isASystem) return -1;
       if (isBSystem) return 1;
 
-      const isAMaster = a.title.includes(MASTER_TEACHER.name);
-      const isBMaster = b.title.includes(MASTER_TEACHER.name);
+      const isAMaster = a.title.includes(SafeMaster.name);
+      const isBMaster = b.title.includes(SafeMaster.name);
       if (isAMaster) return -1;
       if (isBMaster) return 1;
 
@@ -2591,8 +2654,9 @@ export default function App() {
       if (screen === 'student-subscriptions') {
         return (
           <TeachersScreen
-            subscriptions={subscriptions}
+            subscriptions={subscriptions || []}
             setSubscriptions={setSubscriptions}
+            teacherProfile={teacherProfile}
             onBack={() => {
               setScreen('student-library');
               checkForUpdates();
@@ -2641,38 +2705,44 @@ export default function App() {
                         Создан: {formatNiceDate(getStoredQuizMeta(item.name).createdAt || item.mtime * 1000)}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={() => handleOpenTeacherFileEditor(item)} style={styles.fileActionBtn}>
-                      <Ionicons name="create-outline" size={24} color={C.accent} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const isPublished = cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name));
-                        if (isPublished) {
-                          handleUnpublishFromCloud(item);
-                        } else {
-                          handlePublishToCloud(item);
-                        }
-                      }}
-                      style={[styles.fileActionBtn, { backgroundColor: cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? '#111' : '#FFD700', borderWidth: 0 }]}
-                    >
-                      <Ionicons
-                        name={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "cloud-offline-outline" : "cloud-upload-outline"}
-                        size={22}
-                        color={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "#fff" : "#000"}
-                      />
-                    </TouchableOpacity>
+                    {item.canEdit && (
+                      <TouchableOpacity onPress={() => handleOpenTeacherFileEditor(item)} style={styles.fileActionBtn}>
+                        <Ionicons name="create-outline" size={24} color={C.accent} />
+                      </TouchableOpacity>
+                    )}
+                    {item.canEdit && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          const isPublished = cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name));
+                          if (isPublished) {
+                            handleUnpublishFromCloud(item);
+                          } else {
+                            handlePublishToCloud(item);
+                          }
+                        }}
+                        style={[styles.fileActionBtn, { backgroundColor: cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? '#111' : '#FFD700', borderWidth: 0 }]}
+                      >
+                        <Ionicons
+                          name={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "cloud-offline-outline" : "cloud-upload-outline"}
+                          size={22}
+                          color={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "#fff" : "#000"}
+                        />
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity onPress={() => handleShareFile(item, true)} style={styles.fileActionBtn}>
                       <Ionicons name="share-outline" size={24} color={C.accent} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteLibraryFile(item, 'teacher')} style={styles.deleteBtn}>
-                      <Text style={styles.deleteBtnText}>🗑</Text>
-                    </TouchableOpacity>
+                    {item.canEdit && (
+                      <TouchableOpacity onPress={() => handleDeleteLibraryFile(item, 'teacher')} style={styles.deleteBtn}>
+                        <Text style={styles.deleteBtnText}>🗑</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               />
               <Btn label="Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
               <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10 }} />
-              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles(TEACHER_QUIZZES_DIR, 'teacher')} variant="black" style={{ marginTop: 10 }} />
+              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles(SafeDirs.TEACHER, 'teacher')} variant="black" style={{ marginTop: 10 }} />
             </View>
           </View>
         );

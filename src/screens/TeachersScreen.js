@@ -35,48 +35,59 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, chil
 export default function TeachersScreen({
   subscriptions,
   setSubscriptions,
+  teacherProfile,
   onBack
 }) {
   const [newTeacher, setNewTeacher] = useState('');
   const [loading, setLoading] = useState(false);
 
   const addTeacher = async () => {
-    const username = newTeacher.trim();
-    if (!username) {
-      Alert.alert("Ошибка", "Введите GitHub Username учителя.");
+    let input = newTeacher.trim();
+    if (!input) {
+      Alert.alert("Ошибка", "Введите GitHub Username учителя или 'username/repo'.");
       return;
     }
 
-    if (subscriptions.some(s => s.owner.toLowerCase() === username.toLowerCase())) {
-      Alert.alert("Уже в подписках", "Вы уже подписаны на этого учителя.");
+    let username = input;
+    let repoName = GITHUB_CONFIG.REPO;
+
+    if (input.includes('/')) {
+      const parts = input.split('/');
+      username = parts[0].trim();
+      repoName = parts[1].trim();
+    }
+
+    if (subscriptions.some(s => s.owner.toLowerCase() === username.toLowerCase() && s.repo.toLowerCase() === repoName.toLowerCase())) {
+      Alert.alert("Уже в подписках", "Вы уже подписаны на этот репозиторий.");
       return;
     }
 
     setLoading(true);
     try {
-      // Проверяем существование репозитория (по умолчанию REPO_NAME)
-      const repoName = GITHUB_CONFIG.REPO;
+      // Проверяем существование репозитория анонимно
       const url = `https://api.github.com/repos/${username}/${repoName}`;
-
       const response = await fetch(url);
 
       if (response.status === 200) {
-        const repoData = await response.json();
+        const isOwner = teacherProfile?.owner === username && teacherProfile?.repo === repoName;
+        
         const teacherData = {
-          id: username,
-          name: username, // Можно было бы брать full_name, но логин надежнее
+          id: `${username}_${repoName}`,
+          name: username,
           owner: username,
           repo: repoName,
-          isMaster: false
+          isMaster: false,
+          isOwner: isOwner,
+          disabled: false
         };
 
         const nextSubs = [...subscriptions, teacherData];
         await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
         setSubscriptions(nextSubs);
         setNewTeacher('');
-        Alert.alert("Успех", `Учитель @${username} успешно добавлен в подписки.`);
+        Alert.alert("Успех", `Подписка на @${username}/${repoName} успешно добавлена. ${isOwner ? '(Ваш репозиторий)' : '(Только чтение)'}`);
       } else {
-        Alert.alert("Ошибка", `Репозиторий "${repoName}" у пользователя @${username} не найден. Проверьте правильность имени или попросите учителя создать репозиторий.`);
+        Alert.alert("Ошибка", `Репозиторий "${repoName}" у пользователя @${username} не найден. Проверьте правильность имени.`);
       }
     } catch (e) {
       Alert.alert("Ошибка сети", "Не удалось проверить учителя. Проверьте интернет-соединение.");

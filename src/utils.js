@@ -1,7 +1,5 @@
 // src/utils.js
-
-// 1. Секретная "соль" приложения
-const APP_SALT = "Quiz_Secure_Salt_v20260428"; 
+import { SECURITY_CONFIG } from './constants';
 
 const generateRandomKey = (length = 16) => {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -40,7 +38,7 @@ const hexToString = (hex) => {
 // Новая версия ЭКСПОРТА (без передачи ключа снаружи)
 export const encodeEncryptedPayload = (plainText) => {
   const dynamicPart = generateRandomKey(16);
-  const fullKey = dynamicPart + APP_SALT;
+  const fullKey = dynamicPart + SECURITY_CONFIG.SALT;
   const encrypted = applyXOR(plainText, fullKey);
   return stringToHex(dynamicPart) + stringToHex(encrypted);
 };
@@ -53,7 +51,7 @@ export const decodeEncryptedPayload = (payload) => {
   }
   try {
     const dynamicPart = hexToString(normalized.slice(0, 64));
-    const fullKey = dynamicPart + APP_SALT;
+    const fullKey = dynamicPart + SECURITY_CONFIG.SALT;
     const encryptedData = hexToString(normalized.slice(64));
     return applyXOR(encryptedData, fullKey);
   } catch (e) {
