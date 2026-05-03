@@ -13,6 +13,26 @@ const Card = ({ children, style }) => (
   <View style={[styles.card, style]}>{children}</View>
 );
 
+const ConfigItem = ({ label, value, editable, onChange, multiline, style, placeholder, keyboardType, secureTextEntry }) => (
+  <View style={[{ marginBottom: 12 }, style]}>
+    <Text style={[styles.label, { marginBottom: 4, fontSize: 12, color: C.textSecondary }]}>{label}</Text>
+    {editable ? (
+      <TextInput
+        style={[styles.input, { marginBottom: 0, paddingVertical: multiline ? 8 : 4, height: multiline ? 80 : 40, backgroundColor: 'rgba(255,255,255,0.05)' }]}
+        value={value}
+        onChangeText={onChange}
+        multiline={multiline}
+        placeholder={placeholder}
+        placeholderTextColor={C.textDisabled}
+        keyboardType={keyboardType || 'default'}
+        secureTextEntry={secureTextEntry}
+      />
+    ) : (
+      <Text style={{ color: C.textPrimary, fontSize: 14, fontWeight: '500' }}>{secureTextEntry && value ? '••••' : (value || '—')}</Text>
+    )}
+  </View>
+);
+
 const Btn = ({ label, onPress, variant = 'primary', loading = false, style, textStyle }) => (
   <TouchableOpacity
     onPress={onPress}
@@ -32,21 +52,27 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, text
   </TouchableOpacity>
 );
 
-export default function TeacherProfileScreen({
-  teacherProfile,
-  setTeacherProfile,
   onBack,
   title,
-  apiTimeout
+  apiTimeout,
+  config,
+  updateConfig,
+  loadConfig
 }) {
   const [loading, setLoading] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
+  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+
   const [tempProfile, setTempProfile] = useState({
     owner: teacherProfile?.owner || '',
     repo: teacherProfile?.repo || '',
     token: teacherProfile?.token || ''
   });
 
+  const [tempConfig, setTempConfig] = useState({ ...config });
+
+  const isMasterAdmin = teacherProfile?.owner === 'EvgeniyKrasnyanskiy';
   const isConnected = !!teacherProfile;
 
   const validateAndSaveProfile = async () => {
@@ -272,6 +298,136 @@ export default function TeacherProfileScreen({
           <Text style={[styles.welcomeDesc, { textAlign: 'center', fontSize: 13 }]}>
             Статистика публикаций и управление облачными тестами будут доступны после успешной настройки профиля.
           </Text>
+        </Card>
+
+        {/* ── Текущая конфигурация (Remote Config) ── */}
+        <Card style={{ padding: 20, marginTop: 20, marginBottom: 40 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="cloud-download-outline" size={24} color={C.accent} style={{ marginRight: 10 }} />
+              <Text style={styles.cardTitle}>Текущая конфигурация</Text>
+            </View>
+            {isMasterAdmin && !isEditingConfig && (
+              <TouchableOpacity onPress={() => { setTempConfig({ ...config }); setIsEditingConfig(true); }} style={{ padding: 5 }}>
+                <Text style={{ color: C.accent, fontWeight: '700' }}>Редактировать</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={{ gap: 12 }}>
+            <ConfigItem
+              label="Заголовок приложения"
+              value={tempConfig.title}
+              editable={isEditingConfig}
+              onChange={(v) => setTempConfig(p => ({ ...p, title: v }))}
+            />
+            <ConfigItem
+              label="Описание (Welcome)"
+              value={tempConfig.welcomeDesc}
+              editable={isEditingConfig}
+              multiline
+              onChange={(v) => setTempConfig(p => ({ ...p, welcomeDesc: v }))}
+            />
+            <ConfigItem
+              label="Email для отчетов"
+              value={tempConfig.reportEmail}
+              editable={isEditingConfig}
+              placeholder="не задан"
+              onChange={(v) => setTempConfig(p => ({ ...p, reportEmail: v }))}
+            />
+            <ConfigItem
+              label="Код доступа (Админ)"
+              value={tempConfig.adminCode}
+              editable={isEditingConfig}
+              secureTextEntry
+              onChange={(v) => setTempConfig(p => ({ ...p, adminCode: v }))}
+            />
+            <ConfigItem
+              label="Текст загрузки"
+              value={tempConfig.loadingDesc}
+              editable={isEditingConfig}
+              onChange={(v) => setTempConfig(p => ({ ...p, loadingDesc: v }))}
+            />
+            <ConfigItem
+              label="Текст перед стартом"
+              value={tempConfig.prestartText}
+              editable={isEditingConfig}
+              multiline
+              onChange={(v) => setTempConfig(p => ({ ...p, prestartText: v }))}
+            />
+            <ConfigItem
+              label="Разрешенные хосты (через запятую)"
+              value={Array.isArray(tempConfig.allowedQuizHosts) ? tempConfig.allowedQuizHosts.join(', ') : ''}
+              editable={isEditingConfig}
+              onChange={(v) => setTempConfig(p => ({ ...p, allowedQuizHosts: v.split(',').map(h => h.trim()).filter(Boolean) }))}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <ConfigItem
+                label="Timeout (ms)"
+                value={String(tempConfig.remoteFetchTimeoutMs)}
+                editable={isEditingConfig}
+                style={{ flex: 1 }}
+                keyboardType="numeric"
+                onChange={(v) => setTempConfig(p => ({ ...p, remoteFetchTimeoutMs: parseInt(v, 10) || 0 }))}
+              />
+              <ConfigItem
+                label="Cooldown (ms)"
+                value={String(tempConfig.TEST_COOLDOWN_MS)}
+                editable={isEditingConfig}
+                style={{ flex: 1 }}
+                keyboardType="numeric"
+                onChange={(v) => setTempConfig(p => ({ ...p, TEST_COOLDOWN_MS: parseInt(v, 10) || 0 }))}
+              />
+            </View>
+            <ConfigItem
+              label="Макс. размер файла (байт)"
+              value={String(tempConfig.maxQuizFileBytes)}
+              editable={isEditingConfig}
+              keyboardType="numeric"
+              onChange={(v) => setTempConfig(p => ({ ...p, maxQuizFileBytes: parseInt(v, 10) || 0 }))}
+            />
+          </View>
+
+          {isEditingConfig ? (
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+              <Btn
+                label="Отмена"
+                variant="black"
+                style={{ flex: 1, borderColor: C.border }}
+                onPress={() => setIsEditingConfig(false)}
+              />
+              <Btn
+                label="Сохранить"
+                style={{ flex: 1, backgroundColor: C.success }}
+                loading={configLoading}
+                onPress={async () => {
+                  setConfigLoading(true);
+                  const success = await updateConfig(tempConfig);
+                  setConfigLoading(false);
+                  if (success) {
+                    setIsEditingConfig(false);
+                    Alert.alert("Успех", "Конфигурация обновлена локально. Не забудьте обновить JSON в репозитории для синхронизации у всех пользователей.");
+                  } else {
+                    Alert.alert("Ошибка", "Не удалось сохранить конфигурацию.");
+                  }
+                }}
+              />
+            </View>
+          ) : (
+            <Btn
+              label="Обновить из облака"
+              variant="ghost"
+              style={{ marginTop: 20, borderColor: C.accent, borderWidth: 1 }}
+              textStyle={{ color: C.accent }}
+              onPress={() => loadConfig()}
+            />
+          )}
+
+          {!isMasterAdmin && (
+            <Text style={{ marginTop: 15, fontSize: 11, color: C.textDisabled, fontStyle: 'italic', textAlign: 'center' }}>
+              Редактирование доступно только для администратора (EvgeniyKrasnyanskiy)
+            </Text>
+          )}
         </Card>
       </ScrollView>
 

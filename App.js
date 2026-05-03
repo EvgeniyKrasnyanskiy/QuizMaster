@@ -402,6 +402,19 @@ export default function App() {
     }
   };
 
+  const updateConfig = async (nextConfig) => {
+    try {
+      const sanitized = sanitizeRemoteConfig(nextConfig);
+      const merged = { ...config, ...sanitized };
+      setConfig(merged);
+      await AsyncStorage.setItem(CACHE_KEYS.CONFIG, JSON.stringify(merged));
+      return true;
+    } catch (e) {
+      console.error('Failed to update config:', e);
+      return false;
+    }
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
@@ -2699,6 +2712,9 @@ export default function App() {
             setTeacherProfile={setTeacherProfile}
             onBack={() => setScreen('teacher')}
             apiTimeout={remoteFetchTimeoutMs}
+            config={config}
+            updateConfig={updateConfig}
+            loadConfig={loadConfig}
           />
         );
       }
@@ -2711,6 +2727,9 @@ export default function App() {
             setTeacherProfile={setTeacherProfile}
             onBack={() => setScreen('teacher')}
             apiTimeout={remoteFetchTimeoutMs}
+            config={config}
+            updateConfig={updateConfig}
+            loadConfig={loadConfig}
           />
         );
       }
