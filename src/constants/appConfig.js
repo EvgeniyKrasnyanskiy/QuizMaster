@@ -2,6 +2,7 @@ import { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, APP_SALT, ADMIN_CODE } from '@
 import * as FileSystem from 'expo-file-system/legacy';
 
 export const APP_VERSION = '1.2.0';
+export const FALLBACK_APP_SALT = 'Quiz_Secure_Salt_v20260428';
 
 export const COOLDOWN_SETTINGS = {
   HOURS: 1,
@@ -69,7 +70,7 @@ const _API_ENDPOINTS = {
 export { _API_ENDPOINTS as API_ENDPOINTS };
 
 const _SECURITY_CONFIG = {
-  get SALT() { return APP_SALT || 'Default_Salt_Change_Me'; },
+  get SALT() { return APP_SALT || FALLBACK_APP_SALT; },
   get ADMIN_CODE() { return ADMIN_CODE || '777'; },
 };
 export { _SECURITY_CONFIG as SECURITY_CONFIG };

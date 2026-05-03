@@ -22,6 +22,7 @@ import {
   APP_VERSION, GITHUB_CONFIG, QUIZ_DIRS, FILES,
   CACHE_KEYS, SYNCABLE_CONFIG_KEYS, DEFAULT_ALLOWED_CONTENT_TYPES,
   API_ENDPOINTS, COOLDOWN_SETTINGS, APP_METADATA, MASTER_TEACHER, LOCAL_TEACHER_NAME, API_TIMEOUT,
+  FALLBACK_APP_SALT,
   MASTER_SOURCE_URL
 } from './src/constants';
 
@@ -704,8 +705,9 @@ export default function App() {
             const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${item.fileName}`;
             const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
             if (cloudFile && cloudFile.content) {
+              console.log("[MasterSync] Decrypting with salt prefix:", SECURITY_CONFIG.SALT.substring(0, 4));
               const binary = atob(cloudFile.content.replace(/\n/g, ''));
-              const decrypted = decodeEncryptedPayload(binary);
+              const decrypted = decodeEncryptedPayload(binary, SECURITY_CONFIG.SALT);
               await FileSystem.writeAsStringAsync(localPath, decrypted);
               downloadedCount++;
             }
@@ -1127,7 +1129,8 @@ export default function App() {
           if (!fileRes.ok) continue;
 
           const rawContent = await fileRes.text();
-          const decrypted = decodeEncryptedPayload(rawContent);
+          console.log("[MasterSync] Decrypting with salt prefix:", SECURITY_CONFIG.SALT.substring(0, 4));
+          const decrypted = decodeEncryptedPayload(rawContent, SECURITY_CONFIG.SALT);
           const { questions } = parseQuestions(decrypted);
           
           if (questions && questions.length > 0) {

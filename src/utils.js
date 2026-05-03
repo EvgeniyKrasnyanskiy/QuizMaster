@@ -36,22 +36,22 @@ const hexToString = (hex) => {
 };
 
 // Новая версия ЭКСПОРТА (без передачи ключа снаружи)
-export const encodeEncryptedPayload = (plainText) => {
+export const encodeEncryptedPayload = (plainText, customSalt = null) => {
   const dynamicPart = generateRandomKey(16);
-  const fullKey = dynamicPart + SECURITY_CONFIG.SALT;
+  const fullKey = dynamicPart + (customSalt || SECURITY_CONFIG.SALT);
   const encrypted = applyXOR(plainText, fullKey);
   return stringToHex(dynamicPart) + stringToHex(encrypted);
 };
 
 // Новая версия ДЕШИФРОВАНИЯ (без передачи ключа снаружи)
-export const decodeEncryptedPayload = (payload) => {
+export const decodeEncryptedPayload = (payload, customSalt = null) => {
   const normalized = payload.trim();
   if (normalized.length < 32 || !/^[0-9a-f]+$/i.test(normalized)) {
     return normalized; 
   }
   try {
     const dynamicPart = hexToString(normalized.slice(0, 32));
-    const fullKey = dynamicPart + SECURITY_CONFIG.SALT;
+    const fullKey = dynamicPart + (customSalt || SECURITY_CONFIG.SALT);
     const encryptedData = hexToString(normalized.slice(32));
     return applyXOR(encryptedData, fullKey);
   } catch (e) {
@@ -169,8 +169,8 @@ const splitSemicolonLine = (line) => {
 };
 
 // Helper: Decrypt and Parse together
-export const decryptAndParseFile = (payload) => {
-  const decrypted = decodeEncryptedPayload(payload);
+export const decryptAndParseFile = (payload, customSalt = null) => {
+  const decrypted = decodeEncryptedPayload(payload, customSalt);
   return parseQuestions(decrypted);
 };
 
