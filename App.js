@@ -2730,6 +2730,14 @@ export default function App() {
                   <Ionicons name={showHiddenTests ? "eye-outline" : "eye-off-outline"} size={14} color={showHiddenTests ? C.accent : C.textSecondary} />
                 </TouchableOpacity>
 
+                <TouchableOpacity onPress={toggleHideSystemTests} style={{ marginRight: 16 }}>
+                  <MaterialCommunityIcons
+                    name="school"
+                    size={24}
+                    color={hideCompletedSystemTests ? C.textDisabled : C.accent}
+                  />
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={handleManualSync}
                   style={[styles.fileActionBtn, { borderColor: C.success, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}
@@ -3346,7 +3354,7 @@ export default function App() {
                         </View>
                         <TouchableOpacity
                           onPress={() => handleOpenCloudFileEditor(item)}
-                          style={[styles.fileActionBtn, { marginRight: 8 }]}
+                          style={styles.fileActionBtn}
                         >
                           <Ionicons name="create-outline" size={24} color={C.accent} />
                         </TouchableOpacity>
