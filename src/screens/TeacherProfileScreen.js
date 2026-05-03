@@ -52,6 +52,9 @@ const Btn = ({ label, onPress, variant = 'primary', loading = false, style, text
   </TouchableOpacity>
 );
 
+export default function TeacherProfileScreen({
+  teacherProfile,
+  setTeacherProfile,
   onBack,
   title,
   apiTimeout,
