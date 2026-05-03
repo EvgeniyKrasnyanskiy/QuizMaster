@@ -1109,10 +1109,7 @@ export default function App() {
       setSubscriptions(prev => {
         const base = (prev || []).filter(s => s && (s.owner || s.username || s.name));
         
-        // Удаляем любые дубликаты мастера перед добавлением нового
-        const filtered = base.filter(s => s.owner !== masterOwner && s.id !== subId);
-        
-        const nextSubs = [...filtered, {
+        const nextSubs = [...base, {
           id: subId,
           name: authorName,
           owner: masterOwner,
@@ -1120,14 +1117,16 @@ export default function App() {
           isMaster: true
         }];
 
-        const seen = new Set();
-        return nextSubs.filter(s => {
-          if (!s) return false;
-          const key = (s.owner || s.username || s.name || '').toLowerCase();
-          if (!key || seen.has(key)) return false;
-          seen.add(key);
-          return true;
+        // Строгая дедупликация по owner (уникальный ключ для GitHub-источников)
+        const uniqueMap = new Map();
+        nextSubs.forEach(s => {
+          if (s && (s.owner || s.username)) {
+            const key = (s.owner || s.username).toLowerCase();
+            uniqueMap.set(key, s);
+          }
         });
+        
+        return Array.from(uniqueMap.values());
       });
  
       let successCount = 0;
@@ -1145,14 +1144,7 @@ export default function App() {
           
           console.log(`[MasterSync] Raw fetched (50 chars): ${rawContent.substring(0, 50)}`);
           
-          // Нормализация HEX: удаляем лишние 00 байты (UTF-16 HEX -> standard HEX)
-          let normalizedContent = rawContent.trim();
-          if (/^(00[0-9a-fA-F]{2})+$/.test(normalizedContent)) {
-            normalizedContent = normalizedContent.replace(/00([0-9a-fA-F]{2})/g, '$1');
-            console.log(`[MasterSync] Normalized HEX (50 chars): ${normalizedContent.substring(0, 50)}`);
-          }
-          
-          const decrypted = decodeEncryptedPayload(normalizedContent, effectiveSalt);
+          const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
           console.log(`[MasterSync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
           
           const { questions } = parseQuestions(decrypted);
