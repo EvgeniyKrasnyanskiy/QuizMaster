@@ -150,34 +150,21 @@ export default function TeachersScreen({
   const toggleTeacherStatus = async (teacher, disable) => {
     if (!checkActionCooldown()) return;
 
-    const actionText = disable ? 'отключить' : 'активировать';
-    Alert.alert(
-      "Подтверждение",
-      `Вы действительно хотите ${actionText} подписку на @${teacher.owner}?`,
-      [
-        { text: "Отмена", style: "cancel" },
-        {
-          text: "Да",
-          onPress: async () => {
-            Vibration.vibrate(50); // Small hit
-            const nextSubs = subscriptions.map(s => {
-              if (s.owner === teacher.owner) {
-                return { ...s, disabled: disable };
-              }
-              return s;
-            });
-            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
-            setSubscriptions(nextSubs);
-            
-            // "Hit" confirmation (feedback)
-            if (Platform.OS === 'android') {
-              const { ToastAndroid } = require('react-native');
-              ToastAndroid.show(`Подписка ${disable ? 'отключена' : 'активирована'}`, ToastAndroid.SHORT);
-            }
-          }
-        }
-      ]
-    );
+    Vibration.vibrate(50); // Small hit
+    const nextSubs = subscriptions.map(s => {
+      if (s.owner === teacher.owner) {
+        return { ...s, disabled: disable };
+      }
+      return s;
+    });
+    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+    setSubscriptions(nextSubs);
+
+    // "Hit" confirmation (feedback)
+    if (Platform.OS === 'android') {
+      const { ToastAndroid } = require('react-native');
+      ToastAndroid.show(`Подписка ${disable ? 'отключена' : 'активирована'}`, ToastAndroid.SHORT);
+    }
   };
 
   const insets = useSafeAreaInsets();
