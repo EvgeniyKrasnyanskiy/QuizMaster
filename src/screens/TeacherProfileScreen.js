@@ -313,7 +313,7 @@ export default function TeacherProfileScreen({
               </View>
               {!isEditingConfig && (
                 <TouchableOpacity onPress={() => { setTempConfig({ ...config }); setIsEditingConfig(true); }} style={{ padding: 5 }}>
-                  <Text style={{ color: C.accent, fontWeight: '700' }}>Редактировать</Text>
+                  <Ionicons name="create-outline" size={22} color={C.accent} />
                 </TouchableOpacity>
               )}
             </View>
