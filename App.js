@@ -1809,10 +1809,11 @@ export default function App() {
     ]);
   };
 
-  const handleDeleteAllFiles = async (folderPath, folderType) => {
+  const handleDeleteAllFiles = async (folderPaths, folderType) => {
+    const paths = Array.isArray(folderPaths) ? folderPaths : [folderPaths];
     Alert.alert(
       'Удалить все тесты?',
-      'Это действие нельзя отменить. Все файлы в этой папке будут безвозвратно удалены.',
+      'Это действие нельзя отменить. Все локальные файлы в списке будут безвозвратно удалены.',
       [
         { text: 'Отмена', style: 'cancel' },
         {
@@ -1821,20 +1822,29 @@ export default function App() {
           onPress: async () => {
             try {
               setLoading(true);
-              const files = await FileSystem.readDirectoryAsync(folderPath);
-              const datFiles = files.filter(f => f.toLowerCase().endsWith('.dat'));
+              let totalDeleted = 0;
 
-              if (datFiles.length === 0) {
-                Alert.alert('Информация', 'Нет файлов для удаления.');
-                return;
+              for (const folderPath of paths) {
+                try {
+                  const files = await FileSystem.readDirectoryAsync(folderPath);
+                  const datFiles = files.filter(f => f.toLowerCase().endsWith('.dat'));
+
+                  for (const fileName of datFiles) {
+                    const cleanName = stripDatExtension(fileName);
+                    const progressKey = buildQuizProgressKey(cleanName);
+                    const statusKey = buildQuizStatusKey(cleanName);
+                    await AsyncStorage.multiRemove([progressKey, statusKey]);
+                    await FileSystem.deleteAsync(`${folderPath}${fileName}`, { idempotent: true });
+                    totalDeleted++;
+                  }
+                } catch (e) {
+                  console.warn(`Could not read or clear folder: ${folderPath}`, e);
+                }
               }
 
-              for (const fileName of datFiles) {
-                const cleanName = stripDatExtension(fileName);
-                const progressKey = buildQuizProgressKey(cleanName);
-                const statusKey = buildQuizStatusKey(cleanName);
-                await AsyncStorage.multiRemove([progressKey, statusKey]);
-                await FileSystem.deleteAsync(`${folderPath}${fileName}`, { idempotent: true });
+              if (totalDeleted === 0) {
+                Alert.alert('Информация', 'Нет локальных файлов для удаления.');
+                return;
               }
 
               if (folderType === 'student') {
@@ -1842,9 +1852,9 @@ export default function App() {
               } else {
                 await refreshTeacherLibrary();
               }
-              Alert.alert('Готово', 'Все файлы успешно удалены.');
+              Alert.alert('Готово', `Удалено файлов: ${totalDeleted}`);
             } catch (e) {
-              Alert.alert('Ошибка', 'Не удалось удалить некоторые файлы.');
+              Alert.alert('Ошибка', 'Не удалось завершить удаление всех файлов.');
             } finally {
               setLoading(false);
             }
@@ -2951,17 +2961,15 @@ export default function App() {
                     <TouchableOpacity onPress={() => handleShareFile(item, true)} style={styles.fileActionBtn}>
                       <Ionicons name="share-outline" size={24} color={C.accent} />
                     </TouchableOpacity>
-                    {item.canEdit && (
-                      <TouchableOpacity onPress={() => handleDeleteLibraryFile(item, 'teacher')} style={styles.deleteBtn}>
-                        <Text style={styles.deleteBtnText}>🗑</Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity onPress={() => handleDeleteLibraryFile(item, 'teacher')} style={styles.deleteBtn}>
+                      <Text style={styles.deleteBtnText}>🗑</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               />
               <Btn label="Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
               <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10 }} />
-              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles(SafeDirs.TEACHER, 'teacher')} variant="black" style={{ marginTop: 10 }} />
+              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10 }} />
             </View>
           </View>
         );
