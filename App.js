@@ -22,7 +22,7 @@ import {
   APP_VERSION, GITHUB_CONFIG, QUIZ_DIRS, FILES,
   CACHE_KEYS, SYNCABLE_CONFIG_KEYS, DEFAULT_ALLOWED_CONTENT_TYPES,
   API_ENDPOINTS, COOLDOWN_SETTINGS, APP_METADATA, MASTER_TEACHER, LOCAL_TEACHER_NAME, API_TIMEOUT,
-  FALLBACK_APP_SALT,
+  FALLBACK_APP_SALT, SECURITY_CONFIG, APP_SALT,
   MASTER_SOURCE_URL
 } from './src/constants';
 
@@ -705,11 +705,18 @@ export default function App() {
             const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${item.fileName}`;
             const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
             if (cloudFile && cloudFile.content) {
-              console.log("[MasterSync] Decrypting with salt prefix:", SECURITY_CONFIG.SALT.substring(0, 4));
+              const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
               const binary = atob(cloudFile.content.replace(/\n/g, ''));
-              const decrypted = decodeEncryptedPayload(binary, SECURITY_CONFIG.SALT);
-              await FileSystem.writeAsStringAsync(localPath, decrypted);
-              downloadedCount++;
+              const decrypted = decodeEncryptedPayload(binary, effectiveSalt);
+              
+              // Валидация: проверяем наличие вопросов перед сохранением
+              const { questions } = parseQuestions(decrypted);
+              if (questions && questions.length > 0) {
+                await FileSystem.writeAsStringAsync(localPath, decrypted);
+                downloadedCount++;
+              } else {
+                console.warn(`[Sync] Skipped invalid file: ${item.fileName}`);
+              }
             }
           } catch (e) {
             console.warn(`Failed to auto-download ${item.fileName} from ${item.authorId}:`, e.message);
@@ -1090,7 +1097,6 @@ export default function App() {
       
       const registry = await regResponse.json();
       const tests = registry.tests || [];
-      console.log(`[MasterSync] Registry loaded, found ${tests.length} tests.`);
 
       // 2. Обработка автора из реестра для подписок + Дедупликация
       const authorName = registry.author || registry.username || 'Master Source';
@@ -1117,33 +1123,34 @@ export default function App() {
           return true;
         });
       });
-
-      // 3. Итерируем по тестам и скачиваем .dat файлы
+ 
+      let successCount = 0;
       for (const test of tests) {
-        const fileName = test.file || `${test.id}.dat`;
-        const fileUrl = `${baseUrl}/tests/${fileName}`;
-        
         try {
-          console.log(`[MasterSync] Syncing file: ${fileName}`);
+          const fileName = test.file || `${test.id}.dat`;
+          const fileUrl = `${baseUrl}/tests/${fileName}`;
+          
+          console.log(`[MasterSync] Syncing: ${fileName}`);
           const fileRes = await fetch(fileUrl);
           if (!fileRes.ok) continue;
 
           const rawContent = await fileRes.text();
-          console.log("[MasterSync] Decrypting with salt prefix:", SECURITY_CONFIG.SALT.substring(0, 4));
-          const decrypted = decodeEncryptedPayload(rawContent, SECURITY_CONFIG.SALT);
+          const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
+          const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
           const { questions } = parseQuestions(decrypted);
           
           if (questions && questions.length > 0) {
             const savePath = SafeDirs.STUDENT + fileName;
             await FileSystem.writeAsStringAsync(savePath, decrypted);
+            successCount++;
           }
         } catch (fileErr) {
-          console.log(`[MasterSync] Failed to sync ${fileName}:`, fileErr.message);
+          console.log(`[MasterSync] Error ${test?.id || 'unknown'}:`, fileErr.message);
         }
       }
 
       await refreshStudentLibrary();
-      console.log("[MasterSync] Public registry sync completed.");
+      console.log(`[MasterSync] Successfully synced ${successCount} files.`);
     } catch (e) {
       console.log("[MasterSync] Registry sync skipped:", e.message);
     }

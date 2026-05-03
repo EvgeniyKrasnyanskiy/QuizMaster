@@ -1,4 +1,5 @@
-import { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, APP_SALT, ADMIN_CODE } from '@env';
+import { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, APP_SALT as _APP_SALT, ADMIN_CODE } from '@env';
+export const APP_SALT = _APP_SALT;
 import * as FileSystem from 'expo-file-system/legacy';
 
 export const APP_VERSION = '1.2.0';
