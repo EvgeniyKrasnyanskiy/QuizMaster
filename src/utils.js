@@ -184,7 +184,7 @@ export const parseQuestions = (csvText) => {
 
     if (rowType === 'M') {
       if (parts.length < 4 || !parts[1]) {
-        console.log(`[PARSER] Skipping invalid M-line at ${index + 1}`);
+        console.log(`[PARSER] Skipping invalid M-line at ${index + 1}. Parts length: ${parts.length}, Raw: ${JSON.stringify(cleanLine)}`);
         return null;
       }
       
@@ -193,7 +193,10 @@ export const parseQuestions = (csvText) => {
         if (parts[i]) options.push(parts[i]);
       }
 
-      if (options.length < 2) return null;
+      if (options.length < 2) {
+        console.log(`[PARSER] Skipping M-line at ${index + 1}: not enough options (${options.length})`);
+        return null;
+      }
 
       const answers = (parts[parts.length - 1] || "").split(',')
         .map(v => v.trim())
@@ -204,7 +207,10 @@ export const parseQuestions = (csvText) => {
         })
         .filter(v => v !== null);
 
-      if (answers.length === 0) return null;
+      if (answers.length === 0) {
+        console.log(`[PARSER] Skipping M-line at ${index + 1}: no valid answers found in "${parts[parts.length - 1]}"`);
+        return null;
+      }
       return { type: 'multi', q: parts[1], opts: options, a: [...new Set(answers)] };
     }
 
