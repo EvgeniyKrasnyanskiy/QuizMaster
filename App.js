@@ -345,7 +345,6 @@ export default function App() {
   const [resultsOrigin, setResultsOrigin] = useState('student');
   const [testFileName, setTestFileName] = useState('quiz');
   const [cloudRegistry, setCloudRegistry] = useState([]); // [ {id, title, qCount, fileName, author} ]
-  const [cloudSourceStatus, setCloudSourceStatus] = useState({}); // { [owner]: { isUnavailable, error } }
   const [resumeData, setResumeData] = useState(null); // Для передачи в QuizScreen при возобновлении
   const [newTestsCount, setNewTestsCount] = useState(0);
   const [editIsCloud, setEditIsCloud] = useState(false);
@@ -422,26 +421,17 @@ export default function App() {
         // Load multi-user data
         const subsRaw = await AsyncStorage.getItem(CACHE_KEYS.SUBSCRIPTIONS);
         if (subsRaw) {
-          let parsedSubs = JSON.parse(subsRaw);
-          
-          // Проверяем, есть ли мастер в списке и на первом ли он месте
-          const masterIdx = parsedSubs.findIndex(s => s.isMaster);
-          
-          if (masterIdx === -1) {
-            // Если мастера нет, добавляем в начало
-            parsedSubs = [MASTER_TEACHER, ...parsedSubs];
-          } else if (masterIdx !== 0) {
-            // Если мастер есть, но не первый, перемещаем его в начало
-            const master = parsedSubs.splice(masterIdx, 1)[0];
-            parsedSubs = [master, ...parsedSubs];
+          const parsedSubs = JSON.parse(subsRaw);
+          // Если мастер-учитель почему-то пропал из списка (хотя он защищен), добавляем его
+          if (!parsedSubs.some(s => s.isMaster)) {
+            const nextSubs = [MASTER_TEACHER, ...parsedSubs];
+            setSubscriptions(nextSubs);
+            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+          } else {
+            setSubscriptions(parsedSubs);
           }
-
-          // Принудительно обновляем данные мастера (на случай смены Fallback в коде)
-          parsedSubs[0] = { ...MASTER_TEACHER, ...parsedSubs[0], owner: MASTER_TEACHER.owner, repo: MASTER_TEACHER.repo };
-
-          setSubscriptions(parsedSubs);
-          await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(parsedSubs));
         } else {
+          // Если данных нет вообще, инициализируем мастером
           setSubscriptions([MASTER_TEACHER]);
         }
 
@@ -529,16 +519,13 @@ export default function App() {
 
   const fetchCloudRegistry = async () => {
     let merged = [];
-    const newStatus = {};
-    const masterOwner = MASTER_TEACHER.owner;
-    
     for (const sub of (subscriptions || [])) {
       if (sub.disabled) continue;
       try {
         const creds = {
           owner: sub.owner,
           repo: sub.repo,
-          token: sub.token || undefined
+          token: sub.token || undefined // Students usually don't have tokens for others
         };
         const data = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
         if (data && data.content) {
@@ -546,32 +533,18 @@ export default function App() {
           const registry = JSON.parse(decoded);
           const authorName = sub.name || sub.owner;
 
+          // Добавляем инфо об авторе к каждому тесту
           const withAuthor = registry.map(item => ({
             ...item,
             authorId: sub.owner,
             authorName: authorName
           }));
           merged = [...merged, ...withAuthor];
-          newStatus[sub.owner] = { isUnavailable: false };
         }
       } catch (e) {
-        const isMaster = sub.owner === masterOwner;
-        const isAuthError = e.message.includes('401') || e.message.includes('403');
-        
-        // Логируем ошибку только если есть токен или это мастер (но без спама)
-        if (GITHUB_CONFIG.TOKEN || isMaster) {
-          console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
-        }
-        
-        if (isMaster || isAuthError || e.message.includes('404')) {
-          newStatus[sub.owner] = { 
-            isUnavailable: true, 
-            error: e.message.includes('404') ? 'Репозиторий не найден' : 'Доступ ограничен или ошибка сети'
-          };
-        }
+        console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
       }
     }
-    setCloudSourceStatus(newStatus);
     return merged;
   };
 
@@ -1066,25 +1039,27 @@ export default function App() {
   const initDemoQuiz = async () => {
     try {
       const studentFiles = await FileSystem.readDirectoryAsync(SafeDirs.STUDENT);
+      // Если библиотека пуста (совсем первый запуск)
       if (studentFiles.length === 0) {
-        console.log("Library is empty, generating demo quiz programmatically...");
-        
-        const demoPath = SafeDirs.STUDENT + 'System_Welcome_Demo.dat';
-        
-        const demoContent = [
-          'METADATA=Title:Добро пожаловать;Author:Система;V:1.2',
-          'M;25 + 10 = ?;30;35;40;45;2',
-          'T;Сколько будет 10 плюс 10?;Введите число;20'
-        ].join('\n');
+        console.log("Library is empty, initializing demo quiz...");
+        const demoAsset = require('./assets/quizzes/demo_quiz.dat');
+        console.log("Demo source:", demoAsset);
+        const asset = Asset.fromModule(demoAsset);
+        await asset.downloadAsync();
 
-        const encrypted = encodeEncryptedPayload(demoContent);
-        await FileSystem.writeAsStringAsync(demoPath, encrypted);
-        
-        console.log("Demo quiz generated and encrypted successfully");
+        const studentDir = SafeDirs.STUDENT;
+        if (!studentDir || studentDir.includes('undefined')) {
+          throw new Error("Student directory is not ready or undefined");
+        }
+
+        const demoPath = studentDir + 'System_Welcome_Demo.dat';
+        console.log("Initializing demo at:", demoPath);
+        await FileSystem.copyAsync({ from: asset.localUri, to: demoPath });
+        console.log("Demo quiz initialized successfully");
         await refreshStudentLibrary();
       }
     } catch (e) {
-      console.warn("Init demo quiz failed:", e.message);
+      console.warn("Init demo quiz skipped or failed:", e.message);
     }
   };
 
@@ -1297,25 +1272,6 @@ export default function App() {
     }));
     setStudentQuizStatus(Object.fromEntries(statusEntries));
     return allFiles;
-  };
-
-  const handleTeacherLogout = async () => {
-    Alert.alert(
-      "Выйти из профиля?",
-      "Ваши данные авторизации будут удалены с устройства.",
-      [
-        { text: "Отмена", style: "cancel" },
-        { 
-          text: "Выйти", 
-          style: "destructive", 
-          onPress: async () => {
-            await AsyncStorage.removeItem(CACHE_KEYS.TEACHER_PROFILE);
-            setTeacherProfile(null);
-            if (loadConfig) loadConfig();
-          } 
-        }
-      ]
-    );
   };
 
   const refreshTeacherLibrary = async () => {
@@ -2215,48 +2171,6 @@ export default function App() {
     }
   };
 
-  const getGroupedCloudRegistry = () => {
-    if (!cloudRegistry) return [];
-    const myTests = [];
-    const subscriptionTests = {};
-
-    // Инициализируем группы для всех подписок
-    (subscriptions || []).forEach(sub => {
-      subscriptionTests[sub.owner] = {
-        title: sub.isMaster ? sub.name : `Подписка: ${sub.name || sub.owner}`,
-        data: [],
-        authorId: sub.owner,
-        isUnavailable: cloudSourceStatus[sub.owner]?.isUnavailable,
-        error: cloudSourceStatus[sub.owner]?.error
-      };
-    });
-
-    cloudRegistry.forEach(item => {
-      const isMine = teacherProfile && item.authorId === teacherProfile.owner;
-      if (isMine) {
-        myTests.push(item);
-      } else if (subscriptionTests[item.authorId]) {
-        subscriptionTests[item.authorId].data.push(item);
-      }
-    });
-
-    const sections = [];
-    if (myTests.length > 0) {
-      sections.push({ title: 'Мои тесты', data: myTests });
-    }
-
-    // Добавляем секции подписок в порядке их следования (Мастер будет первым)
-    (subscriptions || []).forEach(sub => {
-      const section = subscriptionTests[sub.owner];
-      // Показываем секцию если есть данные ИЛИ если это Мастер (даже если пуст/ошибка) ИЛИ если есть ошибка
-      if (section.data.length > 0 || sub.isMaster || section.isUnavailable) {
-        sections.push(section);
-      }
-    });
-
-    return sections;
-  };
-
   const getGroupedQuizzes = () => {
     // Группируем локальные файлы по авторам на основе префиксов
     const groups = {};
@@ -2293,21 +2207,6 @@ export default function App() {
         }
         groups[authorKey].data.push(file);
       });
-
-    // Добавляем пустые секции для недоступных подписок, чтобы они отображались в UI
-    Object.keys(cloudSourceStatus).forEach(owner => {
-      if (cloudSourceStatus[owner].isUnavailable) {
-        const sub = (subscriptions || []).find(s => s.owner === owner);
-        if (sub && !groups[owner]) {
-          groups[owner] = {
-            title: `Источник: ${sub.name || sub.owner} (Недоступен)`,
-            data: [],
-            isUnavailable: true,
-            error: cloudSourceStatus[owner].error
-          };
-        }
-      }
-    });
 
     // Сортируем секции: System -> Master -> Local -> Остальные
     return Object.values(groups).sort((a, b) => {
@@ -2483,7 +2382,7 @@ export default function App() {
                 <TouchableOpacity
                   onPress={() => setScreen('teacher-profile')}
                   style={{
-                    backgroundColor: teacherProfile ? 'rgba(91, 139, 245, 0.1)' : 'rgba(255,255,255,0.1)',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
                     paddingHorizontal: 12,
                     height: 34,
                     borderRadius: 8,
@@ -2491,32 +2390,11 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1,
-                    borderColor: teacherProfile ? C.accent : C.border
+                    borderColor: C.border
                   }}
                 >
-                  <Text style={{ color: teacherProfile ? C.accent : C.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
-                    {teacherProfile ? "МОЙ ПРОФИЛЬ" : "СОЗДАТЬ ПРОФИЛЬ"}
-                  </Text>
+                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>NEW</Text>
                 </TouchableOpacity>
-
-                {teacherProfile && (
-                  <TouchableOpacity
-                    onPress={handleTeacherLogout}
-                    style={{
-                      backgroundColor: 'rgba(255, 77, 77, 0.1)',
-                      paddingHorizontal: 10,
-                      height: 34,
-                      borderRadius: 8,
-                      marginRight: 8,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 1,
-                      borderColor: 'rgba(255, 77, 77, 0.3)'
-                    }}
-                  >
-                    <Ionicons name="log-out-outline" size={16} color="#ff4d4d" />
-                  </TouchableOpacity>
-                )}
 
                 <TouchableOpacity
                   style={styles.helpBtn}
@@ -2578,7 +2456,6 @@ export default function App() {
           <TeacherProfileScreen
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
-            loadConfig={loadConfig}
             onBack={() => setScreen('teacher')}
           />
         );
@@ -2590,7 +2467,6 @@ export default function App() {
             title="Новый профиль"
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
-            loadConfig={loadConfig}
             onBack={() => setScreen('teacher')}
           />
         );
@@ -3180,80 +3056,38 @@ export default function App() {
               <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
                 Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
               </Text>
-              <SectionList
-                sections={getGroupedCloudRegistry()}
-                keyExtractor={(item, index) => item.id ? `${item.id}_${item.authorId}` : `empty_${index}`}
-                stickySectionHeadersEnabled={false}
+              <FlatList
+                data={cloudRegistry}
+                keyExtractor={(item) => item.id}
                 ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
-                renderSectionHeader={({ section }) => (
-                  <View style={{ backgroundColor: C.bg, paddingVertical: 10, marginTop: 16 }}>
-                    <Text style={{ color: C.accent, fontWeight: '800', fontSize: 16, letterSpacing: 1 }}>{section.title.toUpperCase()}</Text>
-                    {section.isUnavailable && (
-                      <Text style={{ color: C.danger, fontSize: 12, marginTop: 4 }}>
-                        ⚠️ {section.error || "Источник временно недоступен или репозиторий удален"}
-                      </Text>
-                    )}
-                  </View>
-                )}
                 renderItem={({ item }) => {
                   if (!item || !item.id || !item.title) return null;
-                  
-                  const isMine = teacherProfile && item.authorId === teacherProfile.owner;
-                  const isDownloaded = studentLibraryFiles.some(f => 
-                    f.authorId === item.authorId && stripDatExtension(f.displayName) === stripDatExtension(item.fileName)
-                  );
-
                   return (
                     <View style={styles.libraryRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.libraryTitle}>{item.title}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                          <View style={{ backgroundColor: 'rgba(91, 139, 245, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 }}>
-                            <Text style={{ color: C.accent, fontSize: 10, fontWeight: '700' }}>👤 {item.authorName}</Text>
-                          </View>
-                          <Text style={styles.libraryMeta}>
-                            ID: {item.id} | Вопросов: {item.qCount}
-                          </Text>
-                        </View>
+                        <Text style={styles.libraryMeta}>
+                          ID: {item.id} | Вопросов: {item.qCount}
+                        </Text>
                       </View>
-                      
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {isDownloaded ? (
-                          <View style={[styles.fileActionBtn, { borderColor: C.success, borderWidth: 1, backgroundColor: 'transparent' }]}>
-                            <Ionicons name="cloud-done-outline" size={20} color={C.success} />
-                          </View>
+                      <TouchableOpacity
+                        onPress={() => handleOpenCloudFileEditor(item)}
+                        style={[styles.fileActionBtn, { marginRight: 8 }]}
+                      >
+                        <Ionicons name="create-outline" size={24} color={C.accent} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
+                        style={[styles.deleteBtn, { opacity: loading ? 0.5 : 1 }]}
+                        disabled={!!loading}
+                        accessibilityState={{ disabled: !!loading }}
+                      >
+                        {loading ? (
+                          <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                          <TouchableOpacity
-                            onPress={() => checkForUpdates(true)} // В этой версии checkForUpdates скачивает всё новое
-                            style={[styles.fileActionBtn, { borderColor: C.accent }]}
-                          >
-                            <Ionicons name="cloud-download-outline" size={20} color={C.accent} />
-                          </TouchableOpacity>
+                          <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
                         )}
-
-                        {isMine && (
-                          <TouchableOpacity
-                            onPress={() => handleOpenCloudFileEditor(item)}
-                            style={[styles.fileActionBtn, { marginLeft: 8 }]}
-                          >
-                            <Ionicons name="create-outline" size={20} color={C.accent} />
-                          </TouchableOpacity>
-                        )}
-
-                        {isMine && (
-                          <TouchableOpacity
-                            onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
-                            style={[styles.deleteBtn, { marginLeft: 8, opacity: loading ? 0.5 : 1 }]}
-                            disabled={!!loading}
-                          >
-                            {loading ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <Ionicons name="trash-outline" size={20} color="#fff" />
-                            )}
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                      </TouchableOpacity>
                     </View>
                   );
                 }}

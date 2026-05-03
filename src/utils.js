@@ -169,45 +169,53 @@ const splitSemicolonLine = (line) => {
 };
 
 export const parseQuestions = (csvText) => {
-  const normalized = csvText.replace(/^\uFEFF/, '');
+  const normalized = (csvText || '').replace(/^\uFEFF/, '');
   const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
 
   return lines.map((line, index) => {
-    if (line.startsWith('METADATA=')) return null; // Пропускаем метаданные
+    // Агрессивная очистка от невидимых символов
+    const cleanLine = line.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+    if (!cleanLine || cleanLine.startsWith('METADATA=')) {
+      return null;
+    }
 
-    const parts = splitSemicolonLine(line);
+    const parts = splitSemicolonLine(cleanLine);
     const rowType = parts[0];
+
     if (rowType === 'M') {
-      if (parts.length < 7 || !parts[1]) {
-        throw new Error(`Ошибка формата в строке ${index + 1}: неверный M-формат.`);
+      if (parts.length < 4 || !parts[1]) {
+        console.log(`[PARSER] Skipping invalid M-line at ${index + 1}`);
+        return null;
       }
-      const options = [parts[2], parts[3], parts[4], parts[5]].filter(Boolean);
-      if (options.length < 2) {
-        throw new Error(`Ошибка формата в строке ${index + 1}: нужно минимум 2 варианта.`);
+      
+      const options = [];
+      for (let i = 2; i < parts.length - 1; i++) {
+        if (parts[i]) options.push(parts[i]);
       }
-      // Handling 1-based indexing from .dat files for teacher convenience (e.g. 1 -> index 0)
-      const answers = (parts[6] || "").split(',')
+
+      if (options.length < 2) return null;
+
+      const answers = (parts[parts.length - 1] || "").split(',')
         .map(v => v.trim())
         .filter(Boolean)
         .map(v => {
           const val = parseInt(v, 10);
-          const idx = val - 1;
-          console.log(`[PARSER] Line ${index + 1}: Q="${parts[1].slice(0, 30)}...", Raw="${v}", ParsedIndex=${idx}`);
-          return String(idx);
+          return isNaN(val) ? null : String(val - 1);
         })
-        .filter(v => v !== "NaN");
+        .filter(v => v !== null);
 
-      if (answers.length === 0) {
-        throw new Error(`Ошибка формата в строке ${index + 1}: не указан правильный ответ (получено: "${parts[6]}")`);
-      }
+      if (answers.length === 0) return null;
       return { type: 'multi', q: parts[1], opts: options, a: [...new Set(answers)] };
     }
-    if (rowType !== 'T') {
-      throw new Error(`Ошибка формата в строке ${index + 1}: неизвестный тип "${rowType}".`);
+
+    if (rowType === 'T') {
+      if (parts.length < 4 || !parts[1] || typeof parts[3] !== 'string' || parts[3].trim() === '') {
+        return null;
+      }
+      return { type: 'text', q: parts[1], hint: parts[2], a: parts[3] };
     }
-    if (parts.length < 4 || !parts[1] || typeof parts[3] !== 'string' || parts[3].trim() === '') {
-      throw new Error(`Ошибка формата в строке ${index + 1}: неверный T-формат.`);
-    }
-    return { type: 'text', q: parts[1], hint: parts[2], a: parts[3] };
+
+    // Просто пропускаем неизвестные типы строк (например, пустые или комментарии)
+    return null;
   }).filter(Boolean);
-};
+};

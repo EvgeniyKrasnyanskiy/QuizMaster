@@ -36,25 +36,25 @@ export { _FILES as FILES };
 
 const _GITHUB_CONFIG = {
   get TOKEN() { return GITHUB_TOKEN || ''; },
-  get OWNER() { return GITHUB_OWNER || 'EvgeniyKrasnyanskiy'; },
-  get REPO() { return GITHUB_REPO || 'quiz-app-data'; },
+  get OWNER() { return GITHUB_OWNER || ''; },
+  get REPO() { return GITHUB_REPO || ''; },
   get REGISTRY_PATH() { return 'registry.json'; },
   get CLOUD_TESTS_DIR() { return 'tests'; },
   get disabled() { return false; },
   get API_BASE() {
-    return `https://api.github.com/repos/${this.OWNER}/${this.REPO}/contents`;
+    return `https://api.github.com/repos/${this.OWNER || ''}/${this.REPO || ''}/contents`;
   },
   get CONFIG_URL() {
-    return `https://raw.githubusercontent.com/${this.OWNER}/${this.REPO}/main/quiz-config.json`;
+    return 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/quiz-config.json';
   },
 };
 export { _GITHUB_CONFIG as GITHUB_CONFIG };
 
 const _MASTER_TEACHER = {
   id: 'master',
-  name: 'Master-Teacher (Cloud)',
-  get owner() { return _GITHUB_CONFIG.OWNER; },
-  get repo() { return _GITHUB_CONFIG.REPO; },
+  name: 'Master-Teacher',
+  get owner() { return GITHUB_OWNER; },
+  get repo() { return GITHUB_REPO; },
   get password() { return '777'; },
   isMaster: true,
 };
