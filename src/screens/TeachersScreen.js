@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StatusBar, Alert, ActivityIndicator, FlatList, StyleSheet
+  StatusBar, Alert, ActivityIndicator, FlatList, StyleSheet, Vibration, Platform
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,14 @@ export default function TeachersScreen({
 }) {
   const [newTeacher, setNewTeacher] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lastActionTime, setLastActionTime] = useState(0);
+
+  const checkActionCooldown = () => {
+    const now = Date.now();
+    if (now - lastActionTime < 1500) return false;
+    setLastActionTime(now);
+    return true;
+  };
 
   const addTeacher = async () => {
     let input = newTeacher.trim();
@@ -66,6 +74,8 @@ export default function TeachersScreen({
       Alert.alert("Уже в подписках", "Вы уже подписаны на этот репозиторий.");
       return;
     }
+
+    if (!checkActionCooldown()) return;
 
     setLoading(true);
     try {
@@ -99,6 +109,7 @@ export default function TeachersScreen({
         await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
         setSubscriptions(nextSubs);
         setNewTeacher('');
+        Vibration.vibrate(100);
         Alert.alert("Успех", `Подписка на @${username}/${repoName} успешно добавлена. ${isOwner ? '(Ваш репозиторий)' : '(Только чтение)'}`);
       } else {
         Alert.alert("Ошибка", `Репозиторий "${repoName}" у пользователя @${username} не найден. Проверьте правильность имени.`);
@@ -111,6 +122,7 @@ export default function TeachersScreen({
   };
 
   const removeTeacher = async (teacher) => {
+    if (!checkActionCooldown()) return;
     if (teacher.isMaster) {
       Alert.alert("Запрещено", "Мастер-учителя нельзя удалить.");
       return;
@@ -125,6 +137,7 @@ export default function TeachersScreen({
           text: "Отписаться",
           style: "destructive",
           onPress: async () => {
+            Vibration.vibrate(100);
             const nextSubs = subscriptions.filter(s => s.owner !== teacher.owner);
             await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
             setSubscriptions(nextSubs);
@@ -135,14 +148,36 @@ export default function TeachersScreen({
   };
 
   const toggleTeacherStatus = async (teacher, disable) => {
-    const nextSubs = subscriptions.map(s => {
-      if (s.owner === teacher.owner) {
-        return { ...s, disabled: disable };
-      }
-      return s;
-    });
-    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
-    setSubscriptions(nextSubs);
+    if (!checkActionCooldown()) return;
+
+    const actionText = disable ? 'отключить' : 'активировать';
+    Alert.alert(
+      "Подтверждение",
+      `Вы действительно хотите ${actionText} подписку на @${teacher.owner}?`,
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Да",
+          onPress: async () => {
+            Vibration.vibrate(50); // Small hit
+            const nextSubs = subscriptions.map(s => {
+              if (s.owner === teacher.owner) {
+                return { ...s, disabled: disable };
+              }
+              return s;
+            });
+            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+            setSubscriptions(nextSubs);
+            
+            // "Hit" confirmation (feedback)
+            if (Platform.OS === 'android') {
+              const { ToastAndroid } = require('react-native');
+              ToastAndroid.show(`Подписка ${disable ? 'отключена' : 'активирована'}`, ToastAndroid.SHORT);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const insets = useSafeAreaInsets();
