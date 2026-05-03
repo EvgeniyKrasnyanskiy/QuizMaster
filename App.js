@@ -2464,12 +2464,13 @@ export default function App() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={{ marginTop: 20, alignItems: 'center' }}
+            <Btn
+              label="Закрыть"
               onPress={() => setActionModalVisible(false)}
-            >
-              <Text style={{ color: C.textDisabled, fontWeight: '600' }}>Закрыть</Text>
-            </TouchableOpacity>
+              variant="black"
+              style={{ marginTop: 20 }}
+              textStyle={{ color: '#00BFFF' }}
+            />
           </View>
         </TouchableOpacity>
       </Modal>
@@ -2547,7 +2548,7 @@ export default function App() {
                 <TouchableOpacity
                   onPress={() => setScreen('teacher-profile')}
                   style={{
-                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    backgroundColor: '#FFD700',
                     paddingHorizontal: 12,
                     height: 34,
                     borderRadius: 8,
@@ -2555,10 +2556,10 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1,
-                    borderColor: C.border
+                    borderColor: '#FFA700'
                   }}
                 >
-                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>МОЙ ПРОФИЛЬ</Text>
+                  <Text style={{ color: '#111', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>МОЙ ПРОФИЛЬ</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -2873,8 +2874,7 @@ export default function App() {
               <Btn
                 label="Добавить тесты"
                 onPress={() => { setScreen('add-test'); }}
-                variant="black"
-                style={{ marginTop: 16 }}
+                style={{ marginTop: 16, backgroundColor: C.accent, borderColor: C.accent, borderWidth: 1 }}
               />
             </View>
           </View>
@@ -2969,7 +2969,7 @@ export default function App() {
                 )}
               />
               <Btn label="📝 Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
-              <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10 }} />
+              <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10, borderColor: '#FFD700' }} />
               <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10 }} />
             </View>
           </View>
@@ -3059,7 +3059,7 @@ export default function App() {
                       label="🌐 Загрузить по ссылке"
                       onPress={handleLoadByUrl}
                       disabled={!fileUrl || fileUrl.trim().length < 10}
-                      variant="ghost"
+                      style={{ backgroundColor: C.accent }}
                     />
                   </>
                 )}
@@ -3252,7 +3252,7 @@ export default function App() {
                     label="🔗 Загрузить по ссылке"
                     onPress={() => handleUrlImport(fileUrl)}
                     disabled={!fileUrl.trim()}
-                    variant="ghost"
+                    style={{ backgroundColor: C.accent }}
                   />
                 </View>
               </View>
@@ -3279,7 +3279,8 @@ export default function App() {
                 <Btn 
                   label="Перейти в профиль" 
                   onPress={() => setScreen('teacher-profile')} 
-                  style={{ paddingHorizontal: 32 }}
+                  style={{ paddingHorizontal: 32, backgroundColor: '#FFD700' }}
+                  textStyle={{ color: '#111' }}
                 />
               </View>
             ) : (
