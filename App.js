@@ -2270,7 +2270,7 @@ export default function App() {
           text: 'Выйти',
           style: 'destructive',
           onPress: () => {
-            setScreen('welcome');
+            setScreen('student-library');
           },
         },
         { text: 'Отмена', style: 'cancel' },
