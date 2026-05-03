@@ -2787,6 +2787,9 @@ export default function App() {
                             const hasResult = status.completedAt || (Array.isArray(status.results) && status.results.length > 0);
 
                             if (!hasResult) {
+                              if (status.hasProgress) {
+                                return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Не закончен</Text>;
+                              }
                               return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начато</Text>;
                             }
                             if (correctCount === totalCount && totalCount > 0) {

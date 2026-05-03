@@ -64,10 +64,10 @@ export default function QuizScreen({
   const [totalTime, setTotalTime] = useState(initialData?.totalTime || 0);
   const [questionStartTime, setQuestionStartTime] = useState(initialData?.questionStartTime || 0);
   const [questionTimes, setQuestionTimes] = useState(initialData?.questionTimes || new Array(questions.length).fill(0));
-  
+
   const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [textInput, setTextInput] = useState('');
-  
+
   const timerRef = useRef(null);
 
   // Восстановление ответов при смене вопроса
@@ -139,9 +139,9 @@ export default function QuizScreen({
         const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
 
         isCorrect = !isNaN(correctIdx) && userIndex === correctIdx;
-        
+
         console.log(`[QUIZ] Q${i + 1}: User ${userIndex} vs Correct ${correctIdx} -> ${isCorrect}`);
-        
+
         formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
       } else {
         const userStr = String(answer || '').trim().toLowerCase();
@@ -149,7 +149,7 @@ export default function QuizScreen({
         isCorrect = userStr === correctStr;
 
         console.log(`Comparing TEXT: [User: "${userStr}"] to [Correct: "${correctStr}"] -> ${isCorrect}`);
-        
+
         formattedAnswer = String(answer).trim();
       }
 
@@ -342,8 +342,8 @@ export default function QuizScreen({
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={onSkipPress} 
+            <TouchableOpacity
+              onPress={onSkipPress}
               style={[L.navBtn, allAnswered && { backgroundColor: C.success, borderColor: C.success }]}
             >
               <Text style={[L.navBtnText, allAnswered && { color: C.white }]}>
@@ -353,7 +353,7 @@ export default function QuizScreen({
           </View>
 
           <TouchableOpacity onPress={onAbort} style={L.abortBtn}>
-            <Text style={L.abortBtnText}>Прервать тест</Text>
+            <Text style={L.abortBtnText}>Прервать тест и выйти</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
