@@ -1065,25 +1065,27 @@ export default function App() {
 
   const initDemoQuiz = async () => {
     try {
-      const studentFiles = await FileSystem.readDirectoryAsync(SafeDirs.STUDENT);
-      // Если библиотека пуста (совсем первый запуск)
-      if (studentFiles.length === 0) {
-        const studentDir = SafeDirs.STUDENT;
-        const demoPath = studentDir + 'System_Welcome_Demo_v2.dat';
+      const demoFileName = 'System_Welcome_Demo.dat';
+      const demoPath = SafeDirs.STUDENT + demoFileName;
+      const exists = await FileSystem.getInfoAsync(demoPath);
+      
+      if (!exists.exists) {
+        const content = [
+          'METADATA=title:Обучающий тест;author:System',
+          'M;Чтобы начать обучение, нажмите кнопку "Запустить" справа. Что нужно сделать?;Нажать "Запустить";Нажать "Выход";Ничего не делать;Удалить приложение;1',
+          'M;Если вы выйдете из теста, прогресс сохранится автоматически. Это удобно?;Да, очень!;Нет;Не уверен;Мне все равно;1',
+          'T;Для текстовых ответов используйте поле ввода. Введите слово "СТАРТ" для продолжения;Введите слово СТАРТ;СТАРТ;СТАРТ',
+          'M;После этого теста вы сможете скачивать задания других учителей. Готовы?;Да, готов!;Нет, хочу еще учиться;Может быть;Я передумал;1'
+        ].join('\n');
         
-        // Генерируем зашифрованный контент на лету из актуального шаблона
-        const encryptedContent = encodeEncryptedPayload(QUIZ_TEMPLATE);
-        
-        console.log("Initializing dynamic demo at:", demoPath);
-        await FileSystem.writeAsStringAsync(demoPath, encryptedContent, { 
+        const encrypted = encodeEncryptedPayload(content);
+        await FileSystem.writeAsStringAsync(demoPath, encrypted, { 
           encoding: FileSystem.EncodingType.UTF8 
         });
-        
-        console.log("Demo quiz generated and initialized successfully");
         await refreshStudentLibrary();
       }
     } catch (e) {
-      console.warn("Init demo quiz skipped or failed:", e.message);
+      // Silent fail
     }
   };
 
@@ -1267,22 +1269,35 @@ export default function App() {
       let displayName = name;
 
       if (isStudent && !authorId) {
-        // Старая логика префиксов для файлов в STUDENT_QUIZZES_DIR
-        if (name.includes('_')) {
+        // Системный префикс
+        if (name.startsWith('System_')) {
+          authorId = 'System';
+          displayName = stripDatExtension(name).replace('System_', '').replace(/_/g, ' ');
+        } else if (name.includes('_')) {
+          // Старая логика префиксов для файлов в STUDENT_QUIZZES_DIR
           const parts = name.split('_');
           authorId = parts[0];
-          displayName = parts.slice(1).join('_');
+          displayName = stripDatExtension(parts.slice(1).join('_'));
         }
       }
 
       try {
         const encrypted = await FileSystem.readAsStringAsync(fullPath, { encoding: FileSystem.EncodingType.UTF8 });
         const decrypted = decodeEncryptedPayload(encrypted);
-        const { questions } = parseQuestions(decrypted);
+        const { questions, metadata } = parseQuestions(decrypted);
         questionCount = questions ? questions.length : 0;
+        
+        // Если в метаданных есть заголовок, используем его
+        if (metadata && metadata.title) {
+          displayName = metadata.title;
+        } else {
+          displayName = stripDatExtension(displayName);
+        }
       } catch (e) {
-        console.warn(`Error parsing metadata for ${name}:`, e);
+        displayName = stripDatExtension(displayName);
+        // Silent fail for parsing individual file meta
       }
+
       return {
         name,
         displayName,
@@ -2413,8 +2428,7 @@ export default function App() {
   const renderSmartActionModal = () => {
     if (!actionTargetTest) return null;
     const { item, status, testId, isHidden } = actionTargetTest;
-    const isCloud = !!item.authorId;
-    const isOrphaned = status.isOrphaned;
+    if (item.authorId === 'System') return null; // Safety: system tests cannot be hidden/deleted
 
     // StatusKey for deletion
     const fileName = item.path.split('/').pop();
@@ -2749,6 +2763,8 @@ export default function App() {
                 renderItem={({ item }) => {
                   const status = studentQuizStatus[item.path] || {};
                   const isLocked = status.isLocked;
+                  const isSystem = item.authorId === 'System';
+                  const isCompleted = !!(status.completedAt || (Array.isArray(status.results) && status.results.length > 0));
                   const testId = item.authorId ? `${item.authorId}_${stripDatExtension(item.displayName)}` : stripDatExtension(item.displayName);
                   const isHidden = permanentlyHiddenIds.includes(testId);
 
@@ -2757,7 +2773,7 @@ export default function App() {
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <Text style={styles.libraryTitle}>
-                            {item.authorId ? '☁️ ' : ''}{item.displayName}
+                            {item.authorId && !isSystem ? '☁️ ' : ''}{isSystem ? '🎓 ' : ''}{item.displayName}
                           </Text>
                           {isHidden && (
                             <View style={{ backgroundColor: C.border, paddingHorizontal: 4, borderRadius: 2, marginLeft: 6 }}>
@@ -2770,7 +2786,7 @@ export default function App() {
                           {(() => {
                             const correctCount = status.results?.filter(r => r.correct).length || 0;
                             const totalCount = item.questionCount || 1;
-                            const hasResult = status.completedAt || (Array.isArray(status.results) && status.results.length > 0);
+                            const hasResult = isCompleted;
 
                             if (!hasResult) {
                               if (status.hasProgress) {
@@ -2802,8 +2818,8 @@ export default function App() {
                       </View>
 
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {/* 1. Посмотреть результат */}
-                        {(status.completedAt || (Array.isArray(status.results) && status.results.length > 0)) ? (
+                        {/* 1. Посмотреть результат (появляется после прохождения) */}
+                        {isCompleted ? (
                           <TouchableOpacity
                             onPress={() => handleViewStudentResults(item)}
                             style={[styles.fileActionBtn, { marginRight: 8, borderColor: C.accent }]}
@@ -2815,28 +2831,42 @@ export default function App() {
                         {/* 2. Кнопка пройти тест */}
                         <TouchableOpacity
                           onPress={() => handleOpenStudentQuiz(item)}
-                          style={[styles.fileActionBtn, { backgroundColor: isLocked ? C.border : 'transparent', marginRight: 8 }]}
+                          style={[
+                            styles.fileActionBtn, 
+                            { 
+                              backgroundColor: isLocked ? C.border : (isSystem && !isCompleted ? C.accent : 'transparent'), 
+                              marginRight: (isSystem && !isCompleted) ? 0 : 8,
+                              borderColor: (isSystem && !isCompleted) ? C.accent : C.border,
+                              width: (isSystem && !isCompleted) ? 'auto' : 40,
+                              paddingHorizontal: (isSystem && !isCompleted) ? 12 : 0,
+                              flexDirection: 'row'
+                            }
+                          ]}
                           disabled={!!isLocked}
                         >
                           <Ionicons
                             name={status.hasProgress ? "play-circle-outline" : "chevron-forward-outline"}
                             size={20}
-                            color={isLocked ? C.textDisabled : C.accent}
+                            color={isLocked ? C.textDisabled : (isSystem && !isCompleted ? C.white : C.accent)}
                           />
+                          {isSystem && !isCompleted && (
+                            <Text style={{ color: C.white, fontSize: 13, fontWeight: '800', marginLeft: 6 }}>ЗАПУСТИТЬ</Text>
+                          )}
                         </TouchableOpacity>
 
-                        {/* 3. Кнопка поделиться файлом теста */}
-                        <TouchableOpacity
-                          onPress={() => handleShareFile(item)}
-                          style={[styles.fileActionBtn, { marginRight: 8, borderColor: C.success }]}
-                        >
-                          <Ionicons name="share-outline" size={20} color={C.success} />
-                        </TouchableOpacity>
+                        {/* 3. Кнопка поделиться файлом теста (скрыта для системы) */}
+                        {!isSystem && (
+                          <TouchableOpacity
+                            onPress={() => handleShareFile(item)}
+                            style={[styles.fileActionBtn, { marginRight: 8, borderColor: C.success }]}
+                          >
+                            <Ionicons name="share-outline" size={20} color={C.success} />
+                          </TouchableOpacity>
+                        )}
 
-                        {/* 4. Смарт-кнопка управления (Modal) */}
-                        {(() => {
+                        {/* 4. Смарт-кнопка управления (Modal) (скрыта для системы) */}
+                        {!isSystem && (() => {
                           const isCloud = !!item.authorId;
-                          const isCompleted = status.completedAt || (Array.isArray(status.results) && status.results.length > 0);
                           const isOrphaned = status.isOrphaned;
 
                           // Показываем кнопку только если завершен или удален из облака (сирота)
