@@ -345,6 +345,7 @@ export default function App() {
   const [resultsOrigin, setResultsOrigin] = useState('student');
   const [testFileName, setTestFileName] = useState('quiz');
   const [cloudRegistry, setCloudRegistry] = useState([]); // [ {id, title, qCount, fileName, author} ]
+  const [cloudSourceStatus, setCloudSourceStatus] = useState({}); // { [owner]: { isUnavailable, error } }
   const [resumeData, setResumeData] = useState(null); // Для передачи в QuizScreen при возобновлении
   const [newTestsCount, setNewTestsCount] = useState(0);
   const [editIsCloud, setEditIsCloud] = useState(false);
@@ -421,17 +422,26 @@ export default function App() {
         // Load multi-user data
         const subsRaw = await AsyncStorage.getItem(CACHE_KEYS.SUBSCRIPTIONS);
         if (subsRaw) {
-          const parsedSubs = JSON.parse(subsRaw);
-          // Если мастер-учитель почему-то пропал из списка (хотя он защищен), добавляем его
-          if (!parsedSubs.some(s => s.isMaster)) {
-            const nextSubs = [MASTER_TEACHER, ...parsedSubs];
-            setSubscriptions(nextSubs);
-            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
-          } else {
-            setSubscriptions(parsedSubs);
+          let parsedSubs = JSON.parse(subsRaw);
+          
+          // Проверяем, есть ли мастер в списке и на первом ли он месте
+          const masterIdx = parsedSubs.findIndex(s => s.isMaster);
+          
+          if (masterIdx === -1) {
+            // Если мастера нет, добавляем в начало
+            parsedSubs = [MASTER_TEACHER, ...parsedSubs];
+          } else if (masterIdx !== 0) {
+            // Если мастер есть, но не первый, перемещаем его в начало
+            const master = parsedSubs.splice(masterIdx, 1)[0];
+            parsedSubs = [master, ...parsedSubs];
           }
+
+          // Принудительно обновляем данные мастера (на случай смены Fallback в коде)
+          parsedSubs[0] = { ...MASTER_TEACHER, ...parsedSubs[0], owner: MASTER_TEACHER.owner, repo: MASTER_TEACHER.repo };
+
+          setSubscriptions(parsedSubs);
+          await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(parsedSubs));
         } else {
-          // Если данных нет вообще, инициализируем мастером
           setSubscriptions([MASTER_TEACHER]);
         }
 
@@ -519,13 +529,16 @@ export default function App() {
 
   const fetchCloudRegistry = async () => {
     let merged = [];
+    const newStatus = {};
+    const masterOwner = MASTER_TEACHER.owner;
+    
     for (const sub of (subscriptions || [])) {
       if (sub.disabled) continue;
       try {
         const creds = {
           owner: sub.owner,
           repo: sub.repo,
-          token: sub.token || undefined // Students usually don't have tokens for others
+          token: sub.token || undefined
         };
         const data = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
         if (data && data.content) {
@@ -533,18 +546,32 @@ export default function App() {
           const registry = JSON.parse(decoded);
           const authorName = sub.name || sub.owner;
 
-          // Добавляем инфо об авторе к каждому тесту
           const withAuthor = registry.map(item => ({
             ...item,
             authorId: sub.owner,
             authorName: authorName
           }));
           merged = [...merged, ...withAuthor];
+          newStatus[sub.owner] = { isUnavailable: false };
         }
       } catch (e) {
-        console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
+        const isMaster = sub.owner === masterOwner;
+        const isAuthError = e.message.includes('401') || e.message.includes('403');
+        
+        // Логируем ошибку только если есть токен или это мастер (но без спама)
+        if (GITHUB_CONFIG.TOKEN || isMaster) {
+          console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
+        }
+        
+        if (isMaster || isAuthError || e.message.includes('404')) {
+          newStatus[sub.owner] = { 
+            isUnavailable: true, 
+            error: e.message.includes('404') ? 'Репозиторий не найден' : 'Доступ ограничен или ошибка сети'
+          };
+        }
       }
     }
+    setCloudSourceStatus(newStatus);
     return merged;
   };
 
@@ -1039,27 +1066,25 @@ export default function App() {
   const initDemoQuiz = async () => {
     try {
       const studentFiles = await FileSystem.readDirectoryAsync(SafeDirs.STUDENT);
-      // Если библиотека пуста (совсем первый запуск)
       if (studentFiles.length === 0) {
-        console.log("Library is empty, initializing demo quiz...");
-        const demoAsset = require('./assets/quizzes/demo_quiz.dat');
-        console.log("Demo source:", demoAsset);
-        const asset = Asset.fromModule(demoAsset);
-        await asset.downloadAsync();
+        console.log("Library is empty, generating demo quiz programmatically...");
+        
+        const demoPath = SafeDirs.STUDENT + 'System_Welcome_Demo.dat';
+        
+        const demoContent = [
+          'METADATA=Title:Добро пожаловать;Author:Система;V:1.2',
+          'M;25 + 10 = ?;30;35;40;45;2',
+          'T;Сколько будет 10 плюс 10?;Введите число;20'
+        ].join('\n');
 
-        const studentDir = SafeDirs.STUDENT;
-        if (!studentDir || studentDir.includes('undefined')) {
-          throw new Error("Student directory is not ready or undefined");
-        }
-
-        const demoPath = studentDir + 'System_Welcome_Demo.dat';
-        console.log("Initializing demo at:", demoPath);
-        await FileSystem.copyAsync({ from: asset.localUri, to: demoPath });
-        console.log("Demo quiz initialized successfully");
+        const encrypted = encodeEncryptedPayload(demoContent);
+        await FileSystem.writeAsStringAsync(demoPath, encrypted);
+        
+        console.log("Demo quiz generated and encrypted successfully");
         await refreshStudentLibrary();
       }
     } catch (e) {
-      console.warn("Init demo quiz skipped or failed:", e.message);
+      console.warn("Init demo quiz failed:", e.message);
     }
   };
 
@@ -2193,14 +2218,25 @@ export default function App() {
   const getGroupedCloudRegistry = () => {
     if (!cloudRegistry) return [];
     const myTests = [];
-    const subscriptionTests = [];
+    const subscriptionTests = {};
+
+    // Инициализируем группы для всех подписок
+    (subscriptions || []).forEach(sub => {
+      subscriptionTests[sub.owner] = {
+        title: sub.isMaster ? sub.name : `Подписка: ${sub.name || sub.owner}`,
+        data: [],
+        authorId: sub.owner,
+        isUnavailable: cloudSourceStatus[sub.owner]?.isUnavailable,
+        error: cloudSourceStatus[sub.owner]?.error
+      };
+    });
 
     cloudRegistry.forEach(item => {
       const isMine = teacherProfile && item.authorId === teacherProfile.owner;
       if (isMine) {
         myTests.push(item);
-      } else {
-        subscriptionTests.push(item);
+      } else if (subscriptionTests[item.authorId]) {
+        subscriptionTests[item.authorId].data.push(item);
       }
     });
 
@@ -2208,9 +2244,16 @@ export default function App() {
     if (myTests.length > 0) {
       sections.push({ title: 'Мои тесты', data: myTests });
     }
-    if (subscriptionTests.length > 0) {
-      sections.push({ title: 'Тесты подписок', data: subscriptionTests });
-    }
+
+    // Добавляем секции подписок в порядке их следования (Мастер будет первым)
+    (subscriptions || []).forEach(sub => {
+      const section = subscriptionTests[sub.owner];
+      // Показываем секцию если есть данные ИЛИ если это Мастер (даже если пуст/ошибка) ИЛИ если есть ошибка
+      if (section.data.length > 0 || sub.isMaster || section.isUnavailable) {
+        sections.push(section);
+      }
+    });
+
     return sections;
   };
 
@@ -2250,6 +2293,21 @@ export default function App() {
         }
         groups[authorKey].data.push(file);
       });
+
+    // Добавляем пустые секции для недоступных подписок, чтобы они отображались в UI
+    Object.keys(cloudSourceStatus).forEach(owner => {
+      if (cloudSourceStatus[owner].isUnavailable) {
+        const sub = (subscriptions || []).find(s => s.owner === owner);
+        if (sub && !groups[owner]) {
+          groups[owner] = {
+            title: `Источник: ${sub.name || sub.owner} (Недоступен)`,
+            data: [],
+            isUnavailable: true,
+            error: cloudSourceStatus[owner].error
+          };
+        }
+      }
+    });
 
     // Сортируем секции: System -> Master -> Local -> Остальные
     return Object.values(groups).sort((a, b) => {
@@ -3124,12 +3182,17 @@ export default function App() {
               </Text>
               <SectionList
                 sections={getGroupedCloudRegistry()}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => item.id ? `${item.id}_${item.authorId}` : `empty_${index}`}
                 stickySectionHeadersEnabled={false}
                 ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
-                renderSectionHeader={({ section: { title } }) => (
+                renderSectionHeader={({ section }) => (
                   <View style={{ backgroundColor: C.bg, paddingVertical: 10, marginTop: 16 }}>
-                    <Text style={{ color: C.accent, fontWeight: '800', fontSize: 16, letterSpacing: 1 }}>{title.toUpperCase()}</Text>
+                    <Text style={{ color: C.accent, fontWeight: '800', fontSize: 16, letterSpacing: 1 }}>{section.title.toUpperCase()}</Text>
+                    {section.isUnavailable && (
+                      <Text style={{ color: C.danger, fontSize: 12, marginTop: 4 }}>
+                        ⚠️ {section.error || "Источник временно недоступен или репозиторий удален"}
+                      </Text>
+                    )}
                   </View>
                 )}
                 renderItem={({ item }) => {

@@ -173,6 +173,8 @@ export const parseQuestions = (csvText) => {
   const lines = normalized.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
 
   return lines.map((line, index) => {
+    if (line.startsWith('METADATA=')) return null; // Пропускаем метаданные
+
     const parts = splitSemicolonLine(line);
     const rowType = parts[0];
     if (rowType === 'M') {
@@ -207,5 +209,5 @@ export const parseQuestions = (csvText) => {
       throw new Error(`Ошибка формата в строке ${index + 1}: неверный T-формат.`);
     }
     return { type: 'text', q: parts[1], hint: parts[2], a: parts[3] };
-  });
+  }).filter(Boolean);
 };
