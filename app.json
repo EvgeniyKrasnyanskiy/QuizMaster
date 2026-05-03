@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "QuizMaster",
+    "slug": "quiz-app",
+    "version": "1.5.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#98FFD9"
+    },
+    "android": {
+      "package": "com.evgeiykrasnyanskiy.quizapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#98FFD9"
+      },
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "77d343cc-a484-49aa-b016-1ce1ff5f5c09"
+      }
+    },
+    "plugins": [
+      "expo-mail-composer",
+      "expo-asset"
+    ]
+  }
+}

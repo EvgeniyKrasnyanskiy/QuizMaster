@@ -1,0 +1,223 @@
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  StatusBar, Alert, ActivityIndicator, FlatList, StyleSheet
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { styles } from '../styles';
+import { C, CACHE_KEYS, GITHUB_CONFIG, MASTER_TEACHER } from '../constants';
+
+const Card = ({ children, style }) => (
+  <View style={[styles.card, style]}>{children}</View>
+);
+
+const Btn = ({ label, onPress, variant = 'primary', loading = false, style, children }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    disabled={!!loading}
+    accessibilityState={{ disabled: !!loading }}
+    style={[
+      styles.btn,
+      variant === 'black' && { backgroundColor: '#111' },
+      style
+    ]}
+  >
+    {loading ? (
+      <ActivityIndicator color="#fff" />
+    ) : (
+      children || <Text style={styles.btnText}>{label}</Text>
+    )}
+  </TouchableOpacity>
+);
+
+export default function TeachersScreen({
+  subscriptions,
+  setSubscriptions,
+  onBack
+}) {
+  const [newTeacher, setNewTeacher] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const addTeacher = async () => {
+    const username = newTeacher.trim();
+    if (!username) {
+      Alert.alert("Ошибка", "Введите GitHub Username учителя.");
+      return;
+    }
+
+    if (subscriptions.some(s => s.owner.toLowerCase() === username.toLowerCase())) {
+      Alert.alert("Уже в подписках", "Вы уже подписаны на этого учителя.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Проверяем существование репозитория (по умолчанию REPO_NAME)
+      const repoName = GITHUB_CONFIG.REPO;
+      const url = `https://api.github.com/repos/${username}/${repoName}`;
+
+      const response = await fetch(url);
+
+      if (response.status === 200) {
+        const repoData = await response.json();
+        const teacherData = {
+          id: username,
+          name: username, // Можно было бы брать full_name, но логин надежнее
+          owner: username,
+          repo: repoName,
+          isMaster: false
+        };
+
+        const nextSubs = [...subscriptions, teacherData];
+        await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+        setSubscriptions(nextSubs);
+        setNewTeacher('');
+        Alert.alert("Успех", `Учитель @${username} успешно добавлен в подписки.`);
+      } else {
+        Alert.alert("Ошибка", `Репозиторий "${repoName}" у пользователя @${username} не найден. Проверьте правильность имени или попросите учителя создать репозиторий.`);
+      }
+    } catch (e) {
+      Alert.alert("Ошибка сети", "Не удалось проверить учителя. Проверьте интернет-соединение.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeTeacher = async (teacher) => {
+    if (teacher.isMaster) {
+      Alert.alert("Запрещено", "Мастер-учителя нельзя удалить.");
+      return;
+    }
+
+    Alert.alert(
+      "Удаление",
+      `Вы действительно хотите отписаться от @${teacher.owner}? Все его тесты останутся на устройстве, но перестанут обновляться.`,
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Отписаться",
+          style: "destructive",
+          onPress: async () => {
+            const nextSubs = subscriptions.filter(s => s.owner !== teacher.owner);
+            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+            setSubscriptions(nextSubs);
+          }
+        }
+      ]
+    );
+  };
+
+  const toggleTeacherStatus = async (teacher, disable) => {
+    const nextSubs = subscriptions.map(s => {
+      if (s.owner === teacher.owner) {
+        return { ...s, disabled: disable };
+      }
+      return s;
+    });
+    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+    setSubscriptions(nextSubs);
+  };
+
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+
+      {/* Standard Header */}
+      <View style={[
+        styles.headerContainer,
+        { paddingTop: insets.top + 45, minHeight: 60 + insets.top, flexDirection: 'row', alignItems: 'center' }
+      ]}>
+        {/* Абсолютный заголовок — мертво по центру */}
+        <Text style={[styles.headerTitle, { position: 'absolute', left: 0, right: 0, textAlign: 'center', zIndex: 0, fontSize: 22, fontWeight: 'bold' }]}>
+          Подписки
+        </Text>
+
+        {/* Левая часть — кнопка Назад */}
+        <View style={{ flex: 1, alignItems: 'flex-start', zIndex: 1 }}>
+          <TouchableOpacity onPress={onBack} style={styles.headerBack}>
+            <Ionicons name="chevron-back" size={24} color={C.accent} />
+            <Text style={styles.headerBackText}>Назад</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Правая часть — пустая */}
+        <View style={{ flex: 1 }} />
+      </View>
+
+      <View style={{ padding: 20, flex: 1 }}>
+        <Card style={{ marginBottom: 20, padding: 12 }}>
+          <Text style={styles.label}>Добавить учителя</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceHigh, borderRadius: 12, paddingRight: 8 }}>
+            <TextInput
+              style={[styles.input, { flex: 1, marginBottom: 0, borderWidth: 0, backgroundColor: 'transparent' }]}
+              placeholder="GitHub Username"
+              placeholderTextColor={C.textDisabled}
+              value={newTeacher}
+              onChangeText={setNewTeacher}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              onPress={addTeacher}
+              disabled={!!loading}
+              accessibilityState={{ disabled: !!loading }}
+              style={{ width: 44, height: 44, backgroundColor: C.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+            >
+              {loading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="person-add-outline" size={20} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+        </Card>
+
+        <Text style={[styles.label, { marginBottom: 12 }]}>Ваши подписки</Text>
+        <FlatList
+          data={subscriptions}
+          keyExtractor={(item) => item.owner}
+          renderItem={({ item }) => (
+            <View style={[styles.libraryRow, { backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.libraryTitle, { color: C.textPrimary, fontSize: 16 }]}>@{item.owner}</Text>
+                <Text style={[styles.libraryMeta, { color: item.isMaster ? C.accent : C.textSecondary }]}>
+                  {item.isMaster ? '★ Мастер-источник' : `Репозиторий: ${item.repo}`}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => toggleTeacherStatus(item, false)}
+                  style={{ padding: 8, opacity: !item.disabled ? 1 : 0.3 }}
+                  disabled={!item.disabled}
+                >
+                  <Ionicons name="notifications" size={22} color={C.success} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => toggleTeacherStatus(item, true)}
+                  style={{ padding: 8, opacity: item.disabled ? 1 : 0.3 }}
+                  disabled={!!item.disabled}
+                >
+                  <Ionicons name="notifications-off" size={22} color={C.textSecondary} />
+                </TouchableOpacity>
+
+                {(!item.isMaster && item.id !== MASTER_TEACHER?.owner) ? (
+                  <TouchableOpacity
+                    onPress={() => removeTeacher(item)}
+                    style={{ padding: 8 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color={C.danger} />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ padding: 8, opacity: 0.3 }}>
+                    <Ionicons name="trash-outline" size={22} color={C.danger} />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        />
+      </View>
+    </View>
+  );
+}

@@ -1,0 +1,3127 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet, Text, View, TextInput, TouchableOpacity,
+  Alert, ScrollView, Dimensions, Platform, FlatList,
+  StatusBar, ActivityIndicator, KeyboardAvoidingView,
+  Modal, SectionList, RefreshControl, Animated, Easing, ToastAndroid,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ✅ Совместимость с Expo SDK 54
+import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Sharing from 'expo-sharing';
+import * as MailComposer from 'expo-mail-composer';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Asset } from 'expo-asset';
+
+// ── Модули проекта ──
+import {
+  C, DEFAULT_CONFIG,
+  APP_VERSION, GITHUB_CONFIG, QUIZ_DIRS, FILES,
+  CACHE_KEYS, SYNCABLE_CONFIG_KEYS, DEFAULT_ALLOWED_CONTENT_TYPES,
+  API_ENDPOINTS, COOLDOWN_SETTINGS, APP_METADATA, MASTER_TEACHER, LOCAL_TEACHER_NAME, API_TIMEOUT
+} from './src/constants';
+import {
+  buildQuizProgressKey,
+  buildQuizStatusKey,
+  buildCleanReportText,
+  decodeEncryptedPayload,
+  encodeEncryptedPayload,
+  formatNiceDate,
+  formatTime,
+  getStoredQuizMeta,
+  parseQuestions,
+  QUIZ_TEMPLATE,
+  stripDatExtension,
+} from './src/utils';
+import { styles } from './src/styles';
+import QuizScreen from './src/screens/QuizScreen';
+import TeacherProfileScreen from './src/screens/TeacherProfileScreen';
+import TeachersScreen from './src/screens/TeachersScreen';
+
+// ── GitHub Configuration ──
+const { TOKEN: GITHUB_TOKEN, OWNER: REPO_OWNER, REPO: REPO_NAME, API_BASE: GITHUB_API_BASE, REGISTRY_PATH, CLOUD_TESTS_DIR, CONFIG_URL } = GITHUB_CONFIG;
+const { ROOT: QUIZ_ROOT_DIR, STUDENT: STUDENT_QUIZZES_DIR, TEACHER: TEACHER_QUIZZES_DIR } = QUIZ_DIRS;
+const { CONFIG: CONFIG_CACHE_KEY, COMPLETED_IDS: COMPLETED_IDS_KEY, SEEN_TESTS: SEEN_TESTS_KEY } = CACHE_KEYS;
+const { TRACKING_FILE } = FILES;
+
+// Проверка загрузки переменных окружения
+if (!GITHUB_TOKEN || !REPO_OWNER || !REPO_NAME) {
+  console.warn('ВНИМАНИЕ: Переменные окружения GitHub не загружены. Проверьте файл .env');
+}
+
+// Constants removed (moved to appConfig.js)
+
+// ─────────────────────────────────────────────
+// HELPER: имя файла отчёта 
+// ─────────────────────────────────────────────
+const buildReportFileName = (userName, testFileName) => {
+  const safe = (s) => (s || 'noname').replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, '_');
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const randomSuffix = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // A-Z
+  return `${safe(userName)}_${safe(testFileName)}_${dd}-${mm}-${yy}_${randomSuffix}.txt`;
+};
+
+const hasCyrillic = (str) => /[а-яё]/i.test(str);
+
+const validateQuizAsset = (asset, maxQuizFileBytes) => {
+  const name = asset?.name || 'quiz';
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+
+  if (ext && !['csv', 'txt', 'dat'].includes(ext)) {
+    throw new Error(`Файл "${name}" имеет неподдерживаемое расширение.`);
+  }
+
+  if (typeof asset?.size === 'number' && asset.size > maxQuizFileBytes) {
+    throw new Error(`Файл "${name}" слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
+  }
+};
+
+const validateQuizUrl = (input, allowedHosts) => {
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(input);
+  } catch {
+    throw new Error('Ссылка имеет некорректный формат.');
+  }
+
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('Разрешены только HTTPS-ссылки.');
+  }
+
+  if (allowedHosts.length > 0 && !allowedHosts.includes(parsedUrl.hostname)) {
+    throw new Error(`Хост "${parsedUrl.hostname}" не входит в список разрешенных.`);
+  }
+
+  return parsedUrl.toString();
+};
+
+const sanitizeRemoteConfig = (remoteConfig) => {
+  const nextConfig = {};
+
+  for (const key of SYNCABLE_CONFIG_KEYS) {
+    if (!(key in remoteConfig)) continue;
+
+    const value = remoteConfig[key];
+
+    if (['title', 'welcomeDesc', 'loadingDesc', 'prestartText', 'adminCode', 'reportEmail'].includes(key)) {
+      if (typeof value === 'string') nextConfig[key] = value.trim();
+      continue;
+    }
+
+    if (key === 'allowedQuizHosts') {
+      if (Array.isArray(value)) {
+        nextConfig[key] = value
+          .filter(item => typeof item === 'string')
+          .map(item => item.trim().toLowerCase())
+          .filter(Boolean);
+      }
+      continue;
+    }
+
+    if (['maxQuizFileBytes', 'remoteFetchTimeoutMs', 'TEST_COOLDOWN_MS'].includes(key)) {
+      if (Number.isInteger(value) && value >= 0) nextConfig[key] = value;
+    }
+  }
+
+  return nextConfig;
+};
+
+const makeSafeFileName = (name) => (name || 'quiz').replace(/[^a-zA-Zа-яА-ЯёЁ0-9._-]/g, '_');
+
+const buildDatNameWithTimestamp = (baseName) => {
+  return `${makeSafeFileName(baseName)}.dat`;
+};
+
+// ─────────────────────────────────────────────
+// REUSABLE: Button
+// ─────────────────────────────────────────────
+const Btn = ({ label, onPress, disabled, variant = 'primary', style }) => {
+  const bgColor =
+    disabled ? C.border :
+      variant === 'primary' ? C.accent :
+        variant === 'success' ? C.success :
+          variant === 'danger' ? C.danger :
+            variant === 'ghost' ? 'transparent' :
+              variant === 'black' ? '#111' : C.surfaceHigh;
+
+  const borderColor = variant === 'ghost' ? C.border : 'transparent';
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={!!disabled}
+      accessibilityState={{ disabled: !!disabled }}
+      activeOpacity={0.75}
+      style={[
+        styles.btn,
+        { backgroundColor: bgColor, borderColor, borderWidth: variant === 'ghost' ? 1 : 0 },
+        style,
+      ]}
+    >
+      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : C.white }]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+// ─────────────────────────────────────────────
+// REUSABLE: Card
+// ─────────────────────────────────────────────
+const Card = ({ children, style }) => (
+  <View style={[styles.card, style]}>{children}</View>
+);
+
+// ── Help Modal ──
+const HelpModal = ({ visible, onClose, type = 'student', config = {} }) => {
+  const isTeacher = type === 'teacher';
+
+  const getReadableCooldown = (ms) => {
+    if (!ms || ms === 0) return "без ограничений";
+    if (ms === 3600000) return "1 час";
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins} мин.`;
+    const hours = Math.round((ms / 3600000) * 10) / 10;
+    return `${hours} ч.`;
+  };
+
+  const cooldownText = getReadableCooldown(config.TEST_COOLDOWN_MS);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.helpCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {isTeacher ? 'Справка: Режим учителя' : 'Справка: Режим ученика'}
+            </Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={C.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {isTeacher ? (
+              <View>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Профиль:</Text> Настройте GitHub-профиль для хранения ваших тестов. Вам понадобится: Username, Название репозитория (например, 'quizzes') и Personal Access Token (PAT).
+                </Text>
+                <Text style={styles.helpText}>
+                  <Ionicons name="key-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Token:</Text> Создайте токен в настройках GitHub {"(Developer Settings -> Tokens)"} с правами <Text style={{ fontWeight: '700' }}>repo</Text> (для приватных) или <Text style={{ fontWeight: '700' }}>public_repo</Text>.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Облако (GitHub API):</Text> Система синхронизирует тесты через ваш репозиторий. Все изменения в реестре происходят автоматически.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Имена файлов:</Text> Используйте только латиницу и цифры. Кириллица запрещена для стабильности ссылок в облаке.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка <Ionicons name="cloud-upload-outline" size={16} color="#FFD700" /> (желтая) загружает локальный тест в облако. Кнопка <Ionicons name="cloud-offline-outline" size={16} color={C.textSecondary} /> удаляет его из облака.
+                </Text>
+                <Text style={styles.helpText}>
+                  <Ionicons name="information-circle-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Подсказка:</Text> Желтая иконка — это upload {"(локальное -> облако)"}, синяя/темная — download/unpublish.
+                </Text>
+                <Text style={[styles.helpText, { marginTop: 8 }]}>
+                  • <Text style={{ fontWeight: '700' }}>Управление:</Text> Вы можете редактировать тесты прямо в приложении. Облачные тесты обновляются на GitHub при сохранении.
+                </Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Подписки:</Text> Вы можете подписываться на разных учителей по их GitHub Username. Все тесты будут сгруппированы по авторам.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Правила:</Text> Повторное прохождение доступно через: <Text style={{ fontWeight: '700', color: C.accent }}>{cooldownText}</Text>. Таймер обновляется автоматически.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Прогресс:</Text> Приложение сохраняет ваш прогресс. Если вы выйдете, сможете продолжить с того же вопроса.
+                </Text>
+                <Text style={styles.helpText}>
+                  • <Text style={{ fontWeight: '700' }}>Заполнение:</Text> Обязательно ответьте на все вопросы. В конце можно отправить отчет учителю.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <Btn label="Понятно" onPress={onClose} style={{ marginTop: 20 }} />
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ─────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────
+export default function App() {
+  const insets = useSafeAreaInsets();
+
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [localConfig, setLocalConfig] = useState(DEFAULT_CONFIG);
+  const [remoteConfigSnapshot, setRemoteConfigSnapshot] = useState(null);
+  const [configSyncFailed, setConfigSyncFailed] = useState(false);
+  const [screen, setScreen] = useState('welcome');
+  const [userName, setUserName] = useState('');
+  const [questions, setQuestions] = useState([]);
+  const [fileUrl, setFileUrl] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(0);
+  const syncAnim = useRef(new Animated.Value(0)).current;
+  const isSyncingRef = useRef(false);
+
+  useEffect(() => {
+    isSyncingRef.current = isSyncing;
+    if (isSyncing) {
+      const runSyncAnimation = () => {
+        syncAnim.setValue(0);
+        Animated.timing(syncAnim, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.bezier(0.4, 0, 0.2, 1),
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished && isSyncingRef.current) {
+            runSyncAnimation();
+          } else if (!isSyncingRef.current) {
+            // Плавное возвращение в исходную позицию при окончании
+            Animated.spring(syncAnim, {
+              toValue: 0,
+              useNativeDriver: true,
+              friction: 7,
+              tension: 40
+            }).start();
+          }
+        });
+      };
+      runSyncAnimation();
+    }
+  }, [isSyncing]);
+
+  const spin = syncAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+  const [results, setResults] = useState([]);
+  const [totalTime, setTotalTime] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [studentLibraryFiles, setStudentLibraryFiles] = useState([]);
+  const [teacherLibraryFiles, setTeacherLibraryFiles] = useState([]);
+  const [studentQuizStatus, setStudentQuizStatus] = useState({});
+  const [activeQuizPath, setActiveQuizPath] = useState('');
+  const [activeProgressKey, setActiveProgressKey] = useState('');
+  const [activeStatusKey, setActiveStatusKey] = useState('');
+  const [activeSessionId, setActiveSessionId] = useState('');
+  const [editFilePath, setEditFilePath] = useState('');
+  const [editFileName, setEditFileName] = useState('');
+
+  // Auto-sync on student library mount
+  useEffect(() => {
+    if (screen === 'student-library') {
+      const now = Date.now();
+      const COOLDOWN = 10 * 60 * 1000; // 10 minutes
+      if (now - lastSyncTime > COOLDOWN) {
+        checkForUpdates();
+      }
+    }
+  }, [screen]);
+  const [editContent, setEditContent] = useState('');
+  const [editIsNew, setEditIsNew] = useState(false);
+  const [resultsReadOnly, setResultsReadOnly] = useState(false);
+  const [resultsOrigin, setResultsOrigin] = useState('student');
+  const [testFileName, setTestFileName] = useState('quiz');
+  const [cloudRegistry, setCloudRegistry] = useState([]); // [ {id, title, qCount, fileName, author} ]
+  const [resumeData, setResumeData] = useState(null); // Для передачи в QuizScreen при возобновлении
+  const [newTestsCount, setNewTestsCount] = useState(0);
+  const [editIsCloud, setEditIsCloud] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const [helpType, setHelpType] = useState('student');
+  const [teacherProfile, setTeacherProfile] = useState(null);
+  const [subscriptions, setSubscriptions] = useState([MASTER_TEACHER]);
+  const [newSubUsername, setNewSubUsername] = useState('');
+  const [profileInput, setProfileInput] = useState({ owner: '', repo: '', token: '' });
+  const [permanentlyHiddenIds, setPermanentlyHiddenIds] = useState([]);
+  const [showHiddenTests, setShowHiddenTests] = useState(false);
+  const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [actionTargetTest, setActionTargetTest] = useState(null);
+  const [activeAuthorId, setActiveAuthorId] = useState('');
+  const [librarySearch, setLibrarySearch] = useState('');
+  // ── Загрузка удалённого конфига ──
+  const loadConfig = async ({ silent = false } = {}) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    try {
+      const res = await fetch(CONFIG_URL, { signal: controller.signal });
+      if (!res.ok) throw new Error(`Config HTTP ${res.status}`);
+      const json = await res.json();
+      if (!json || typeof json !== 'object' || Array.isArray(json)) {
+        throw new Error('Удаленный конфиг имеет неверный формат.');
+      }
+      const syncedConfig = sanitizeRemoteConfig(json);
+      setRemoteConfigSnapshot(syncedConfig);
+      setConfigSyncFailed(false);
+      const merged = {
+        ...DEFAULT_CONFIG,
+        ...syncedConfig,
+      };
+      setConfig(prev => ({
+        ...prev,
+        ...merged,
+      }));
+      setLocalConfig(merged);
+      await AsyncStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(merged));
+      if (!silent) {
+        Alert.alert('Синхронизация завершена', 'Параметры успешно обновлены из удаленного конфига.');
+      }
+    } catch (e) {
+      setConfigSyncFailed(true);
+      if (!silent) {
+        Alert.alert('Ошибка синхронизации', e.message || 'Не удалось загрузить удаленный конфиг.');
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      try {
+        await ensureQuizDirectories();
+        await initDemoQuiz();
+
+        // Load configurations
+        const cached = await AsyncStorage.getItem(CONFIG_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const merged = { ...DEFAULT_CONFIG, ...sanitizeRemoteConfig(parsed) };
+            setConfig(merged);
+            setLocalConfig(merged);
+          }
+        }
+
+        // Load multi-user data
+        const subsRaw = await AsyncStorage.getItem(CACHE_KEYS.SUBSCRIPTIONS);
+        if (subsRaw) {
+          const parsedSubs = JSON.parse(subsRaw);
+          // Если мастер-учитель почему-то пропал из списка (хотя он защищен), добавляем его
+          if (!parsedSubs.some(s => s.isMaster)) {
+            const nextSubs = [MASTER_TEACHER, ...parsedSubs];
+            setSubscriptions(nextSubs);
+            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+          } else {
+            setSubscriptions(parsedSubs);
+          }
+        } else {
+          // Если данных нет вообще, инициализируем мастером
+          setSubscriptions([MASTER_TEACHER]);
+        }
+
+        const profileRaw = await AsyncStorage.getItem(CACHE_KEYS.TEACHER_PROFILE);
+        if (profileRaw) {
+          setTeacherProfile(JSON.parse(profileRaw));
+        }
+
+        const hiddenRaw = await AsyncStorage.getItem(CACHE_KEYS.HIDDEN_TESTS);
+        if (hiddenRaw) {
+          setPermanentlyHiddenIds(JSON.parse(hiddenRaw));
+        }
+
+      } catch (e) {
+        console.warn('Bootstrap Error:', e.message);
+        setConfig(DEFAULT_CONFIG);
+        setLocalConfig(DEFAULT_CONFIG);
+      } finally {
+        loadConfig({ silent: true });
+      }
+    };
+    bootstrap();
+    refreshStudentLibrary();
+    refreshTeacherLibrary();
+    checkForUpdates();
+  }, []);
+
+  // Синхронизация при изменении подписок
+  useEffect(() => {
+    checkForUpdates();
+  }, [subscriptions]);
+
+  // ─────────────────────────────────────────────
+  // GITHUB CLOUD HELPERS
+  // ─────────────────────────────────────────────
+  const githubRequest = async (path, method = 'GET', body = null, customCreds = null) => {
+    // Priority: customCreds -> teacherProfile -> ENV
+    const activeToken = customCreds?.token || teacherProfile?.token || GITHUB_TOKEN;
+    const activeOwner = customCreds?.owner || teacherProfile?.owner || REPO_OWNER;
+    const activeRepo = customCreds?.repo || teacherProfile?.repo || REPO_NAME;
+
+    if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
+      throw new Error('GitHub Token не настроен. Проверьте профиль или .env');
+    }
+
+    const apiBase = customCreds?.apiBase || `https://api.github.com/repos/${activeOwner}/${activeRepo}/contents`;
+
+    // Кодируем каждый сегмент пути отдельно для поддержки кириллицы
+    const encodedPath = path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    const url = `${apiBase}/${encodedPath}`;
+
+    const headers = {
+      'Authorization': `token ${activeToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+    };
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+    options.signal = controller.signal;
+
+    try {
+      const response = await fetch(url, options);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: response.statusText }));
+        if (response.status === 404 && method === 'GET') return null; // File not found is OK for GET
+        throw new Error(`GitHub API (${activeOwner}): ${err.message}`);
+      }
+      return response.json();
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') throw new Error(`Превышено время ожидания ответа (timeout) от ${activeOwner}`);
+      throw e;
+    }
+  };
+
+  const fetchCloudRegistry = async () => {
+    let merged = [];
+    for (const sub of subscriptions) {
+      if (sub.disabled) continue;
+      try {
+        const creds = {
+          owner: sub.owner,
+          repo: sub.repo,
+          token: sub.token || undefined // Students usually don't have tokens for others
+        };
+        const data = await githubRequest(REGISTRY_PATH, 'GET', null, creds);
+        if (data && data.content) {
+          const decoded = atob(data.content.replace(/\n/g, ''));
+          const registry = JSON.parse(decoded);
+          const authorName = sub.name || sub.owner;
+
+          // Добавляем инфо об авторе к каждому тесту
+          const withAuthor = registry.map(item => ({
+            ...item,
+            authorId: sub.owner,
+            authorName: authorName
+          }));
+          merged = [...merged, ...withAuthor];
+        }
+      } catch (e) {
+        console.warn(`Registry fetch failed for ${sub.owner}:`, e.message);
+      }
+    }
+    return merged;
+  };
+
+  const syncCloudRegistry = async (action, testMeta) => {
+    const currentFile = await githubRequest(REGISTRY_PATH);
+    let registry = [];
+    let sha = null;
+
+    if (currentFile) {
+      sha = currentFile.sha;
+      const decoded = atob(currentFile.content.replace(/\n/g, ''));
+      registry = JSON.parse(decoded);
+    }
+
+    if (action === 'add') {
+      registry = registry.filter(item => item.id !== testMeta.id);
+      registry.push(testMeta);
+    } else {
+      registry = registry.filter(item => item.id !== testMeta.id);
+    }
+
+    const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(registry, null, 2))));
+    await githubRequest(REGISTRY_PATH, 'PUT', {
+      message: `Registry update: ${action} ${testMeta.id}`,
+      content: newContent,
+      sha: sha || undefined
+    });
+    setCloudRegistry(registry);
+  };
+
+  const handlePublishToCloud = async (file) => {
+    if (hasCyrillic(file.name)) {
+      Alert.alert(
+        "Кириллица в названии",
+        "Для стабильной работы облака, пожалуйста, переименуйте тест, используя только латинские буквы и цифры (например, 'Math_Test_1').",
+        [{ text: "Понятно" }]
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const meta = getStoredQuizMeta(file.name);
+      const testId = stripDatExtension(file.name);
+      const fileContent = await FileSystem.readAsStringAsync(file.path, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+
+      const cloudFilePath = `${CLOUD_TESTS_DIR}/${file.name}`;
+      const existingFile = await githubRequest(cloudFilePath);
+
+      await githubRequest(cloudFilePath, 'PUT', {
+        message: `Publish test: ${file.name}`,
+        content: fileContent,
+        sha: existingFile?.sha || undefined
+      });
+
+      await syncCloudRegistry('add', {
+        id: testId,
+        title: meta.originalTitle,
+        qCount: file.questionCount || 0,
+        fileName: file.name
+      });
+
+      Alert.alert('Готово', 'Тест успешно опубликован в облаке ☁️');
+    } catch (e) {
+      Alert.alert('Ошибка публикации', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnpublishFromCloud = async (file) => {
+    Alert.alert('Удалить из облака?', 'Тест перестанет быть доступным для скачивания другими учениками.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const testId = stripDatExtension(file.name);
+            const cloudFilePath = `${CLOUD_TESTS_DIR}/${file.name}`;
+            const existingFile = await githubRequest(cloudFilePath);
+            if (existingFile) {
+              await githubRequest(cloudFilePath, 'DELETE', {
+                message: `Delete test: ${file.name}`,
+                sha: existingFile.sha
+              });
+            }
+            await syncCloudRegistry('remove', { id: testId });
+            // Сразу обновляем реестр для чистоты экрана управления
+            const updatedRegistry = await fetchCloudRegistry();
+            setCloudRegistry(updatedRegistry);
+
+            Alert.alert('Готово', 'Тест удален из облака.');
+          } catch (e) {
+            Alert.alert('Ошибка', e.message);
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    ]);
+  };
+
+  const showToast = (msg) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(msg, ToastAndroid.SHORT);
+    } else {
+      Alert.alert('Облако', msg);
+    }
+  };
+
+  const checkForUpdates = async (isManual = false) => {
+    try {
+      const registry = await fetchCloudRegistry();
+      setCloudRegistry(registry);
+      setLastSyncTime(Date.now());
+
+      if (isManual) {
+        console.log("Cloud sync started...");
+      }
+
+      let downloadedCount = 0;
+      for (const item of registry) {
+        // Изоляция: имя_автора + оригинальное_имя
+        const localName = `${item.authorId}_${item.fileName}`;
+        const localPath = STUDENT_QUIZZES_DIR + localName;
+
+        const exists = await FileSystem.getInfoAsync(localPath);
+        if (!exists.exists) {
+          try {
+            const creds = { owner: item.authorId, repo: item.repo || 'quiz-app-data' };
+            const cloudFilePath = `${CLOUD_TESTS_DIR}/${item.fileName}`;
+            const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
+            if (cloudFile && cloudFile.content) {
+              await FileSystem.writeAsStringAsync(localPath, cloudFile.content, {
+                encoding: FileSystem.EncodingType.Base64
+              });
+              downloadedCount++;
+            }
+          } catch (e) {
+            console.warn(`Failed to auto-download ${item.fileName} from ${item.authorId}:`, e.message);
+          }
+        }
+      }
+
+      // Очистка "призраков": удаляем локальные файлы, которых нет в облаке и которые не пройдены
+      try {
+        const localFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
+        for (const fileName of localFiles) {
+          // Пропускаем ручные файлы и системные демки
+          if (!fileName.includes('_') || fileName.startsWith('System_')) continue;
+
+          const isStillInCloud = registry.some(item => `${item.authorId}_${item.fileName}` === fileName);
+          const statusKey = buildQuizStatusKey(fileName);
+          const statusRaw = await AsyncStorage.getItem(statusKey);
+          let status = statusRaw ? JSON.parse(statusRaw) : null;
+
+          if (!isStillInCloud) {
+            const progressKey = buildQuizProgressKey(fileName);
+            const progressRaw = await AsyncStorage.getItem(progressKey);
+            const hasProgress = Boolean(progressRaw);
+            const isCompleted = status?.completedAt || (Array.isArray(status?.results) && status?.results.length > 0);
+
+            // Проверяем: если не пройден и нет прогресса — удаляем.
+            if (!isCompleted && !hasProgress) {
+              await FileSystem.deleteAsync(STUDENT_QUIZZES_DIR + fileName, { idempotent: true });
+              console.log(`Cleaned up ghost file: ${fileName}`);
+            } else {
+              // Помечаем как "сироту", если пройден или в процессе, но удален из облака
+              if (!status || !status.isOrphaned) {
+                const currentStatus = status || {};
+                currentStatus.isOrphaned = true;
+                await AsyncStorage.setItem(statusKey, JSON.stringify(currentStatus));
+              }
+            }
+          } else {
+            // Если вернулся в облако — снимаем пометку
+            if (status && status.isOrphaned) {
+              status.isOrphaned = false;
+              await AsyncStorage.setItem(statusKey, JSON.stringify(status));
+            }
+          }
+        }
+      } catch (cleanupErr) {
+        console.warn('Cleanup failed:', cleanupErr.message);
+      }
+
+      await refreshStudentLibrary();
+      if (downloadedCount > 0) {
+        console.log(`Downloaded ${downloadedCount} new tests.`);
+      }
+
+      // Считаем новые тесты
+      const localFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
+      const completedRaw = await AsyncStorage.getItem(COMPLETED_IDS_KEY);
+      const completed = completedRaw ? JSON.parse(completedRaw) : [];
+
+      const activeNew = registry.filter(item => {
+        const localName = `${item.authorId}_${item.fileName}`;
+        return localFiles.includes(localName) && !completed.includes(`${item.authorId}_${item.id}`);
+      });
+      setNewTestsCount(activeNew.length);
+      return downloadedCount;
+    } catch (e) {
+      console.log('Update check failed:', e.message);
+      return null;
+    }
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    const count = await checkForUpdates(true);
+    setIsSyncing(false);
+    if (count === null) {
+      showToast("Ошибка синхронизации. Проверьте интернет");
+    } else if (count > 0) {
+      showToast(`Загружено ${count} новых тестов`);
+    } else {
+      showToast("Новых тестов ещё нет");
+    }
+  };
+
+  const handlePullToRefresh = async () => {
+    setIsRefreshing(true);
+    const count = await checkForUpdates(true);
+    setIsRefreshing(false);
+    if (count === null) {
+      showToast("Ошибка синхронизации. Проверьте интернет");
+    } else if (count > 0) {
+      showToast(`Загружено ${count} новых тестов`);
+    } else {
+      showToast("Новых тестов ещё нет");
+    }
+  };
+
+
+
+  const handleOpenCloudFileEditor = async (cloudItem) => {
+    try {
+      setLoading(true);
+      const cloudFilePath = `${CLOUD_TESTS_DIR}/${cloudItem.fileName}`;
+      const cloudFile = await githubRequest(cloudFilePath);
+      if (cloudFile && cloudFile.content) {
+        // Декодируем из base64
+        const binary = atob(cloudFile.content.replace(/\n/g, ''));
+        const decrypted = decodeEncryptedPayload(binary);
+        setEditContent(decrypted);
+        setEditFileName(cloudItem.fileName);
+        setEditIsNew(false);
+        setEditIsCloud(true);
+        setScreen('edit-quiz');
+      }
+    } catch (e) {
+      Alert.alert('Ошибка', 'Не удалось загрузить файл из облака: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    const { owner, repo, token } = profileInput;
+    if (!owner || !repo || !token) {
+      Alert.alert('Ошибка', 'Все поля должны быть заполнены.');
+      return;
+    }
+    try {
+      setLoading(true);
+      // Проверка соединения
+      const creds = { owner, repo, token };
+      const res = await githubRequest('', 'GET', null, creds);
+      if (res) {
+        const profile = { owner, repo, token };
+        setTeacherProfile(profile);
+        await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profile));
+        Alert.alert('Успех', 'Профиль учителя успешно настроен и проверен.');
+        setScreen('teacher');
+      }
+    } catch (e) {
+      Alert.alert('Ошибка проверки', 'Не удалось подключиться к репозиторию. Проверьте данные и токен.\n' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddSubscription = async () => {
+    const username = newSubUsername.trim();
+    if (!username) return;
+
+    if (subscriptions.some(s => s.owner.toLowerCase() === username.toLowerCase())) {
+      Alert.alert('Внимание', 'Вы уже подписаны на этого учителя.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const creds = { owner: username, repo: 'quiz-app-data' }; // Default repo name as discussed
+      // Checking if registry exists to verify
+      const res = await githubRequest(REGISTRY_PATH, 'GET', null, creds);
+
+      if (res) {
+        const newSub = {
+          id: username,
+          name: username,
+          owner: username,
+          repo: 'quiz-app-data',
+          isMaster: false,
+          disabled: false
+        };
+        const nextSubs = [...subscriptions, newSub];
+        setSubscriptions(nextSubs);
+        await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+        setNewSubUsername('');
+        Alert.alert('Успех', `Вы подписались на ${username}. Тесты скоро появятся в списке.`);
+        checkForUpdates();
+      }
+    } catch (e) {
+      Alert.alert('Ошибка', 'Не удалось найти репозиторий "quiz-app-data" у этого пользователя или он недоступен.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveSubscription = (sub) => {
+    if (sub.isMaster) {
+      Alert.alert('Мастер-учитель', 'Вы не можете полностью удалить мастер-учителя, но можете отключить его подписку.');
+      return;
+    }
+    Alert.alert(
+      'Удалить подписку?',
+      `Вы отпишетесь от ${sub.name}. Весь прогресс будет скрыт (но не удален).`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            const nextSubs = subscriptions.filter(s => s.owner !== sub.owner);
+            setSubscriptions(nextSubs);
+            await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+            checkForUpdates();
+          }
+        }
+      ]
+    );
+  };
+
+  const handleToggleSubscription = async (sub) => {
+    const nextSubs = subscriptions.map(s =>
+      s.owner === sub.owner ? { ...s, disabled: !s.disabled } : s
+    );
+    setSubscriptions(nextSubs);
+    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+    checkForUpdates();
+  };
+
+  const handleRestoreMaster = async () => {
+    const nextSubs = subscriptions.map(s =>
+      s.isMaster ? { ...s, disabled: false } : s
+    );
+    if (!nextSubs.some(s => s.isMaster)) {
+      nextSubs.push(MASTER_TEACHER);
+    }
+    setSubscriptions(nextSubs);
+    await AsyncStorage.setItem(CACHE_KEYS.SUBSCRIPTIONS, JSON.stringify(nextSubs));
+    checkForUpdates();
+    Alert.alert('Успех', 'Подписка на мастер-учителя восстановлена.');
+  };
+
+  // ── Определение режима учителя ──
+  const handleNameChange = (text) => {
+    setUserName(text);
+    if (text === config.adminCode) {
+      refreshTeacherLibrary().finally(() => setScreen('teacher'));
+      setUserName('');
+    }
+  };
+
+  const handleContinueStudent = async () => {
+    if (!userName.trim()) return;
+    try {
+      const files = await refreshStudentLibrary();
+      if (files.length > 0) {
+        setScreen('student-library');
+      } else {
+        setScreen('loading');
+      }
+    } catch {
+      setScreen('loading');
+    }
+  };
+
+  const handleBackFromPrestart = async () => {
+    const files = await refreshStudentLibrary();
+    if (files.length > 0) {
+      setScreen('student-library');
+      return;
+    }
+    setScreen('loading');
+  };
+
+
+
+  const handleExitApp = () => {
+    Alert.alert(
+      "Выход",
+      "Вы действительно хотите закрыть приложение?",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Выйти", onPress: () => {
+            if (Platform.OS === 'android') {
+              const { BackHandler } = require('react-native');
+              BackHandler.exitApp();
+            } else {
+              setScreen('welcome');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderConfigSection = (title, configData) => {
+    if (!configData) return null;
+    const sortedKeys = Object.keys(configData).sort();
+
+    return (
+      <Card style={{ padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 12 }}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: C.accent, marginBottom: 8 }}>{title}</Text>
+        {sortedKeys.map(key => (
+          <Text key={key} style={{ fontSize: 11, color: C.textSecondary, marginBottom: 4 }}>
+            {key}: <Text style={{ color: C.textPrimary }}>{JSON.stringify(configData[key])}</Text>
+          </Text>
+        ))}
+      </Card>
+    );
+  };
+
+  const safeStyle = {
+    flex: 1,
+    backgroundColor: C.bg,
+  };
+
+  const allowedQuizHosts = Array.isArray(config.allowedQuizHosts) && config.allowedQuizHosts.length > 0
+    ? config.allowedQuizHosts
+    : DEFAULT_CONFIG.allowedQuizHosts;
+  const maxQuizFileBytes = Number.isInteger(config.maxQuizFileBytes) && config.maxQuizFileBytes > 0
+    ? config.maxQuizFileBytes
+    : DEFAULT_CONFIG.maxQuizFileBytes;
+  const remoteFetchTimeoutMs = Number.isInteger(config.remoteFetchTimeoutMs) && config.remoteFetchTimeoutMs > 0
+    ? config.remoteFetchTimeoutMs
+    : DEFAULT_CONFIG.remoteFetchTimeoutMs;
+  const reportEmail = typeof config.reportEmail === 'string' ? config.reportEmail.trim() : '';
+
+  const ensureQuizDirectories = async () => {
+    const rootInfo = await FileSystem.getInfoAsync(QUIZ_ROOT_DIR);
+    if (!rootInfo.exists) await FileSystem.makeDirectoryAsync(QUIZ_ROOT_DIR, { intermediates: true });
+    const studentInfo = await FileSystem.getInfoAsync(STUDENT_QUIZZES_DIR);
+    if (!studentInfo.exists) await FileSystem.makeDirectoryAsync(STUDENT_QUIZZES_DIR, { intermediates: true });
+    const teacherInfo = await FileSystem.getInfoAsync(TEACHER_QUIZZES_DIR);
+    if (!teacherInfo.exists) await FileSystem.makeDirectoryAsync(TEACHER_QUIZZES_DIR, { intermediates: true });
+  };
+
+  const initDemoQuiz = async () => {
+    try {
+      const studentFiles = await FileSystem.readDirectoryAsync(STUDENT_QUIZZES_DIR);
+      // Если библиотека пуста (совсем первый запуск)
+      if (studentFiles.length === 0) {
+        console.log("Library is empty, initializing demo quiz...");
+        const demoAsset = require('./assets/quizzes/demo_quiz.dat');
+        const asset = Asset.fromModule(demoAsset);
+        await asset.downloadAsync();
+
+        const demoPath = STUDENT_QUIZZES_DIR + 'System_Welcome_Demo.dat';
+        await FileSystem.copyAsync({ from: asset.localUri, to: demoPath });
+        console.log("Demo quiz initialized successfully");
+        await refreshStudentLibrary();
+      }
+    } catch (e) {
+      console.warn("Init demo quiz skipped or failed:", e.message);
+    }
+  };
+
+  const recordTestCompletion = async (testName, authorId = '') => {
+    try {
+      const prefix = authorId ? `${authorId}_` : '';
+      const key = (prefix + stripDatExtension(testName)).toLowerCase();
+      console.log(`[Cooldown] Recording completion for key: ${key}`);
+      let trackingData = {};
+      const info = await FileSystem.getInfoAsync(TRACKING_FILE);
+      if (info.exists) {
+        const content = await FileSystem.readAsStringAsync(TRACKING_FILE);
+        trackingData = JSON.parse(content);
+      }
+      trackingData[key] = new Date().toISOString();
+      await FileSystem.writeAsStringAsync(TRACKING_FILE, JSON.stringify(trackingData));
+    } catch (e) {
+      console.error("Tracking error:", e);
+    }
+  };
+
+  const getTestCooldown = async (testName, authorId = '') => {
+    try {
+      const prefix = authorId ? `${authorId}_` : '';
+      const key = (prefix + stripDatExtension(testName)).toLowerCase();
+      const info = await FileSystem.getInfoAsync(TRACKING_FILE);
+      if (!info.exists) return false;
+
+      const content = await FileSystem.readAsStringAsync(TRACKING_FILE);
+      const trackingData = JSON.parse(content);
+      const lastCompletion = trackingData[key];
+      if (!lastCompletion) return false;
+
+      const now = new Date().getTime();
+      const diff = now - new Date(lastCompletion).getTime();
+      const cooldownMs = Number(config.TEST_COOLDOWN_MS || DEFAULT_CONFIG.TEST_COOLDOWN_MS) || 3600000;
+
+      const isLocked = diff < cooldownMs;
+      console.log(`[Cooldown] Check ${key}: diff=${Math.round(diff / 1000)}s, cooldown=${Math.round(cooldownMs / 1000)}s, locked=${isLocked}`);
+
+      return isLocked ? lastCompletion : false;
+    } catch (e) {
+      console.error("[Cooldown] Error:", e);
+      return false;
+    }
+  };
+
+  const formatUnlockTime = (completionIso) => {
+    if (!completionIso) return '';
+    const now = new Date().getTime();
+    const cooldownMs = Number(config.TEST_COOLDOWN_MS || DEFAULT_CONFIG.TEST_COOLDOWN_MS) || 3600000;
+    const unlockTime = new Date(completionIso).getTime() + cooldownMs;
+    const diff = unlockTime - now;
+
+    if (diff <= 0) return '';
+
+    const diffMin = Math.ceil(diff / 60000);
+
+    // Если блокировка больше суток, показываем дату
+    if (diff > 24 * 60 * 60 * 1000) {
+      return formatNiceDate(new Date(unlockTime));
+    }
+
+    if (diffMin < 60) {
+      return `через ${diffMin} мин`;
+    }
+
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+
+    if (m === 0) {
+      return `через ${h} ч.`;
+    }
+
+    return `через ${h} ч. ${m} мин.`;
+  };
+
+  const listDatFiles = async (folderPath, isStudent = false) => {
+    await ensureQuizDirectories();
+    const fileNames = await FileSystem.readDirectoryAsync(folderPath);
+    const datNames = fileNames.filter(name => name.toLowerCase().endsWith('.dat'));
+    const records = await Promise.all(datNames.map(async (name) => {
+      const fullPath = `${folderPath}${name}`;
+      const info = await FileSystem.getInfoAsync(fullPath);
+      let questionCount = 0;
+      let authorId = null;
+      let displayName = name;
+
+      if (isStudent) {
+        // Извлекаем автора из имени файла (префикс до первого '_')
+        if (name.includes('_')) {
+          const parts = name.split('_');
+          authorId = parts[0];
+          displayName = parts.slice(1).join('_'); // Если в названии теста тоже есть '_'
+        }
+      }
+
+      try {
+        const encrypted = await FileSystem.readAsStringAsync(fullPath, { encoding: FileSystem.EncodingType.UTF8 });
+        const decrypted = decodeEncryptedPayload(encrypted);
+        const parsed = parseQuestions(decrypted);
+        questionCount = parsed.length;
+      } catch (e) {
+        console.warn(`Error parsing metadata for ${name}:`, e);
+      }
+      return {
+        name,
+        displayName,
+        authorId,
+        path: fullPath,
+        size: typeof info.size === 'number' ? info.size : 0,
+        mtime: typeof info.modificationTime === 'number' ? info.modificationTime : 0,
+        questionCount,
+      };
+    }));
+    return records.sort((a, b) => b.mtime - a.mtime);
+  };
+
+  const handleHideTest = async (testId) => {
+    if (!permanentlyHiddenIds.includes(testId)) {
+      const nextHidden = [...permanentlyHiddenIds, testId];
+      setPermanentlyHiddenIds(nextHidden);
+      await AsyncStorage.setItem(CACHE_KEYS.HIDDEN_TESTS, JSON.stringify(nextHidden));
+    }
+    setActionModalVisible(false);
+    refreshStudentLibrary();
+  };
+
+  const handleRestoreTest = async (testId) => {
+    const nextHidden = permanentlyHiddenIds.filter(id => id !== testId);
+    setPermanentlyHiddenIds(nextHidden);
+    await AsyncStorage.setItem(CACHE_KEYS.HIDDEN_TESTS, JSON.stringify(nextHidden));
+    setActionModalVisible(false);
+    refreshStudentLibrary();
+  };
+
+  const handleDeleteTestPermanently = async (path, statusKey, testId) => {
+    Alert.alert(
+      "Удаление навсегда",
+      "Это действие удалит файл теста и всю историю его прохождений. Продолжить?",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить всё",
+          style: "destructive",
+          onPress: async () => {
+            await FileSystem.deleteAsync(path, { idempotent: true });
+            if (statusKey) {
+              await AsyncStorage.removeItem(statusKey);
+            }
+            const nextHidden = permanentlyHiddenIds.filter(id => id !== testId);
+            if (nextHidden.length !== permanentlyHiddenIds.length) {
+              setPermanentlyHiddenIds(nextHidden);
+              await AsyncStorage.setItem(CACHE_KEYS.HIDDEN_TESTS, JSON.stringify(nextHidden));
+            }
+            setActionModalVisible(false);
+            refreshStudentLibrary();
+          }
+        }
+      ]
+    );
+  };
+
+  const refreshStudentLibrary = async () => {
+    const files = await listDatFiles(STUDENT_QUIZZES_DIR, true);
+    setStudentLibraryFiles(files);
+    const statusEntries = await Promise.all(files.map(async (file) => {
+      // Ключи теперь зависят от автора
+      const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
+      const progressKey = buildQuizProgressKey(file.displayName, file.authorId);
+
+      const statusRaw = await AsyncStorage.getItem(statusKey);
+      const progressRaw = await AsyncStorage.getItem(progressKey);
+      const isLocked = await getTestCooldown(stripDatExtension(file.displayName), file.authorId);
+
+      let status = null;
+      if (statusRaw) {
+        try {
+          status = JSON.parse(statusRaw);
+        } catch {
+          status = null;
+        }
+      }
+      return [file.path, {
+        ...(status || {}),
+        hasProgress: Boolean(progressRaw),
+        isLocked,
+        authorId: file.authorId
+      }];
+    }));
+    setStudentQuizStatus(Object.fromEntries(statusEntries));
+    return files;
+  };
+
+  const refreshTeacherLibrary = async () => {
+    const files = await listDatFiles(TEACHER_QUIZZES_DIR);
+    setTeacherLibraryFiles(files);
+    return files;
+  };
+
+  const saveDatToLibrary = async (folderPath, fileName, content) => {
+    await ensureQuizDirectories();
+    const targetName = fileName.toLowerCase().endsWith('.dat') ? fileName : `${fileName}.dat`;
+    const normalizedName = makeSafeFileName(targetName);
+    const targetPath = `${folderPath}${normalizedName}`;
+    await FileSystem.writeAsStringAsync(targetPath, content, { encoding: FileSystem.EncodingType.UTF8 });
+    return { path: targetPath, name: normalizedName };
+  };
+
+  const saveStudentDat = async (baseName, content) => {
+    await ensureQuizDirectories();
+    const normalizedName = `${makeSafeFileName(baseName)}.dat`;
+    const targetPath = `${STUDENT_QUIZZES_DIR}${normalizedName}`;
+    const existing = await FileSystem.getInfoAsync(targetPath);
+    await FileSystem.writeAsStringAsync(targetPath, content, { encoding: FileSystem.EncodingType.UTF8 });
+    return { path: targetPath, name: normalizedName, overwritten: existing.exists };
+  };
+
+  const loadQuizFromDatFile = async (path, name, authorId = '') => {
+    const encrypted = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 });
+    const decrypted = decodeEncryptedPayload(encrypted);
+    const parsed = parseQuestions(decrypted);
+    if (!parsed || parsed.length === 0) {
+      throw new Error('Файл не содержит корректных вопросов.');
+    }
+    const baseName = stripDatExtension(name || 'quiz');
+    _startQuiz(parsed, baseName, path, authorId);
+  };
+
+  const handleEncryptAndSave = async () => {
+    try {
+      setLoading(true);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/plain', '*/*'],
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      const name = asset.name || 'quiz';
+      const ext = name.split('.').pop().toLowerCase();
+      validateQuizAsset(asset, maxQuizFileBytes);
+
+      if (!['csv', 'txt', 'dat'].includes(ext)) {
+        Alert.alert(
+          'Неподдерживаемый формат',
+          `Файл "${name}" не является CSV, TXT или DAT.\nВыберите файл с подходящим расширением.`,
+        );
+        return;
+      }
+
+      if (ext === 'dat') {
+        const encrypted = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        const stampedName = makeSafeFileName(name);
+        await saveDatToLibrary(TEACHER_QUIZZES_DIR, stampedName, encrypted);
+        await refreshTeacherLibrary();
+        Alert.alert('Готово', `Файл .dat импортирован в библиотеку: ${stampedName}`);
+      } else {
+        const sourceText = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        const encrypted = encodeEncryptedPayload(sourceText);
+        const baseName = name.replace(/\.[^.]+$/, '');
+        const stampedName = `${makeSafeFileName(baseName)}.dat`;
+        await saveDatToLibrary(TEACHER_QUIZZES_DIR, stampedName, encrypted);
+        await refreshTeacherLibrary();
+        Alert.alert('Готово', `Файл зашифрован и сохранен: ${stampedName}`);
+      }
+      setScreen('teacher-library');
+    } catch (e) {
+      Alert.alert('Ошибка', e.message || 'Не удалось зашифровать файл.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadByUrl = async () => {
+    if (!fileUrl.trim()) {
+      Alert.alert('Ошибка', 'Введите ссылку на файл');
+      return;
+    }
+    setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), remoteFetchTimeoutMs);
+    try {
+      const resolvedUrl = validateQuizUrl(fileUrl.trim(), allowedQuizHosts);
+      const response = await fetch(resolvedUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Ошибка сети: ${response.status}`);
+
+      const contentLengthHeader = response.headers.get('content-length');
+      const contentType = response.headers.get('content-type') || '';
+      const declaredSize = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : null;
+
+      if (Number.isInteger(declaredSize) && declaredSize > maxQuizFileBytes) {
+        throw new Error(`Файл слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
+      }
+
+      if (contentType && !DEFAULT_ALLOWED_CONTENT_TYPES.some(type => contentType.includes(type))) {
+        throw new Error(`Неподдерживаемый content-type: ${contentType}`);
+      }
+
+      const encryptedData = await response.text();
+      if (encryptedData.length > maxQuizFileBytes) {
+        throw new Error(`Файл слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
+      }
+      const decryptedCSV = decodeEncryptedPayload(encryptedData);
+      const parsedQuestions = parseQuestions(decryptedCSV);
+
+      if (!parsedQuestions || parsedQuestions.length === 0) {
+        throw new Error('Файл не содержит корректных вопросов');
+      }
+
+      const urlSegments = fileUrl.trim().split('/');
+      const rawName = urlSegments[urlSegments.length - 1]
+        .split('?')[0]
+        .replace(/\.dat$/i, '') || 'quiz';
+      const stored = await saveStudentDat(rawName, encryptedData);
+      await refreshStudentLibrary();
+      if (stored.overwritten) {
+        Alert.alert('Файл обновлен', `Тест "${stored.name}" уже существовал и был перезаписан.`);
+      }
+
+      setFileUrl('');
+      _startQuiz(parsedQuestions, stripDatExtension(stored.name), stored.path);
+    } catch (e) {
+      Alert.alert(
+        'Ошибка загрузки',
+        'Не удалось загрузить или обработать тест.\n\n' + (e.message || ''),
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      setLoading(false);
+    }
+  };
+
+  const handleLoadDat = async () => {
+    try {
+      setLoading(true);
+      const result = await DocumentPicker.getDocumentAsync({ type: ['*/*'] });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      const name = asset.name || '';
+      validateQuizAsset(asset, maxQuizFileBytes);
+
+      let encrypted;
+      try {
+        encrypted = await FileSystem.readAsStringAsync(asset.uri, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+      } catch {
+        throw new Error(`Не удалось прочитать файл "${name}".\nВозможно, файл повреждён или неверный формат.`);
+      }
+
+      const decrypted = decodeEncryptedPayload(encrypted);
+      const parsed = parseQuestions(decrypted);
+
+      if (!parsed || parsed.length === 0) {
+        throw new Error(
+          'Файл не содержит корректных вопросов.\n' +
+          'Убедитесь, что выбран файл .dat с зашифрованным тестом.',
+        );
+      }
+
+      const baseName = name.replace(/\.[^.]+$/, '') || 'quiz';
+      const encryptedToStore = encodeEncryptedPayload(decrypted);
+      const stored = await saveStudentDat(baseName, encryptedToStore);
+      await refreshStudentLibrary();
+      if (stored.overwritten) {
+        Alert.alert('Файл обновлен', `Тест "${stored.name}" уже существовал и был перезаписан.`);
+      }
+      _startQuiz(parsed, stripDatExtension(stored.name), stored.path);
+    } catch (e) {
+      Alert.alert('Ошибка чтения файла', e.message || 'Неизвестная ошибка.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewStudentResults = async (file) => {
+    try {
+      setLoading(true);
+      const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
+      const key = buildQuizProgressKey(file.displayName, file.authorId);
+      const statusRaw = await AsyncStorage.getItem(statusKey);
+      const status = statusRaw ? JSON.parse(statusRaw) : null;
+      const saved = await AsyncStorage.getItem(key);
+
+      if ((status?.completedAt || (Array.isArray(status?.results) && status?.results.length > 0)) && !saved) {
+        setQuestions(status.questions || []);
+        setTotalTime(status.totalTime || status.secondsElapsed || 0);
+        setTestFileName(status.testFileName || stripDatExtension(file.displayName));
+        setActiveAuthorId(file.authorId);
+        setActiveStatusKey(statusKey);
+        setResultsReadOnly(true);
+        setResults(status.results || []);
+        setActiveSessionId(Date.now().toString());
+        setResultsOrigin('student');
+        setScreen('results');
+      } else {
+        Alert.alert("Ошибка", "Архивные результаты не найдены.");
+      }
+    } catch (e) {
+      Alert.alert('Ошибка', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenStudentQuiz = async (file) => {
+    const fileName = stripDatExtension(file.displayName);
+    const locked = await getTestCooldown(fileName, file.authorId);
+    if (locked) {
+      Alert.alert("Ошибка", "Тест заблокирован на 24 часа");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
+      const key = buildQuizProgressKey(file.displayName, file.authorId);
+      const saved = await AsyncStorage.getItem(key);
+
+
+      if (saved) {
+        Alert.alert(
+          'Найден сохраненный прогресс',
+          `Продолжить тест "${file.displayName}" с сохраненного места?`,
+          [
+            {
+              text: 'Сначала',
+              onPress: async () => {
+                await AsyncStorage.removeItem(key);
+                await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+              },
+            },
+            {
+              text: 'Продолжить',
+              onPress: () => {
+                const payload = JSON.parse(saved);
+                setQuestions(payload.questions || []);
+                setResumeData(payload);
+                setTestFileName(payload.testFileName || stripDatExtension(file.displayName));
+                setActiveAuthorId(file.authorId);
+                setActiveQuizPath(file.path);
+                setActiveProgressKey(key);
+                setActiveStatusKey(statusKey);
+                setResultsReadOnly(false);
+                setResults([]);
+                setActiveSessionId(Date.now().toString());
+                setResultsOrigin('student');
+                setScreen('quiz');
+              },
+            },
+            { text: 'Отмена', style: 'cancel' },
+          ],
+        );
+      } else {
+        const statusRaw = await AsyncStorage.getItem(statusKey);
+        const status = statusRaw ? JSON.parse(statusRaw) : null;
+
+        if (status?.completedAt) {
+          // Отмечаем как просмотренный при открытии
+          const seenRaw = await AsyncStorage.getItem(SEEN_TESTS_KEY);
+          const seen = seenRaw ? JSON.parse(seenRaw) : [];
+          const testId = `${file.authorId}_${stripDatExtension(file.displayName)}`;
+          if (!seen.includes(testId)) {
+            const nextSeen = [...seen, testId];
+            await AsyncStorage.setItem(SEEN_TESTS_KEY, JSON.stringify(nextSeen));
+            setNewTestsCount(prev => Math.max(0, prev - 1));
+          }
+
+          Alert.alert(
+            'Повторное прохождение',
+            'Этот тест уже был пройден. Вы можете просмотреть прошлый результат или начать заново (старый результат будет удален).',
+            [
+              { text: 'Отмена', style: 'cancel' },
+              {
+                text: 'Результат',
+                onPress: () => handleViewStudentResults(file)
+              },
+              {
+                text: 'Начать заново',
+                onPress: () => {
+                  Alert.alert(
+                    'Вы уверены?',
+                    'Ваш прошлый результат будет удален. Начать тест с начала?',
+                    [
+                      { text: 'Отмена', style: 'cancel' },
+                      {
+                        text: 'Да, начать',
+                        onPress: async () => {
+                          // Очищаем старые результаты перед новым запуском
+                          await AsyncStorage.removeItem(statusKey);
+                          await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+                        }
+                      }
+                    ]
+                  );
+                }
+              }
+            ]
+          );
+        } else {
+          // Отмечаем как просмотренный при открытии
+          const seenRaw = await AsyncStorage.getItem(SEEN_TESTS_KEY);
+          const seen = seenRaw ? JSON.parse(seenRaw) : [];
+          const testId = `${file.authorId}_${stripDatExtension(file.displayName)}`;
+          if (!seen.includes(testId)) {
+            const nextSeen = [...seen, testId];
+            await AsyncStorage.setItem(SEEN_TESTS_KEY, JSON.stringify(nextSeen));
+            setNewTestsCount(prev => Math.max(0, prev - 1));
+          }
+          await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+        }
+      }
+    } catch (e) {
+      Alert.alert('Ошибка', e.message || 'Не удалось открыть тест.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShareFile = async (file, skipWarning = false) => {
+    const doShare = async () => {
+      try {
+        const canShare = await Sharing.isAvailableAsync();
+        if (!canShare) {
+          Alert.alert("Ошибка", "Шеринг недоступен на этом устройстве");
+          return;
+        }
+        await Sharing.shareAsync(file.path, {
+          mimeType: 'application/octet-stream',
+          dialogTitle: `Поделиться тестом: ${file.name}`,
+          UTI: 'public.data',
+        });
+      } catch (e) {
+        Alert.alert('Ошибка', 'Не удалось отправить файл.');
+      }
+    };
+
+    if (skipWarning) {
+      await doShare();
+    } else {
+      Alert.alert(
+        "Внимание!",
+        "Вы собираетесь отправить файл самого теста, а не результат его прохождения. Продолжить?",
+        [
+          { text: "Отмена", style: "cancel" },
+          { text: "Да, отправить", onPress: doShare }
+        ]
+      );
+    }
+  };
+
+  const handleDeleteLibraryFile = async (file, folderType) => {
+    Alert.alert('Удалить файл?', file.name, [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          const cleanName = stripDatExtension(file.name);
+          const progressKey = buildQuizProgressKey(cleanName);
+          const statusKey = buildQuizStatusKey(cleanName);
+
+          await AsyncStorage.multiRemove([progressKey, statusKey]);
+          await FileSystem.deleteAsync(file.path, { idempotent: true });
+
+          if (folderType === 'student') {
+            await refreshStudentLibrary();
+          } else {
+            await refreshTeacherLibrary();
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteAllFiles = async (folderPath, folderType) => {
+    Alert.alert(
+      'Удалить все тесты?',
+      'Это действие нельзя отменить. Все файлы в этой папке будут безвозвратно удалены.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить всё',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const files = await FileSystem.readDirectoryAsync(folderPath);
+              const datFiles = files.filter(f => f.toLowerCase().endsWith('.dat'));
+
+              if (datFiles.length === 0) {
+                Alert.alert('Информация', 'Нет файлов для удаления.');
+                return;
+              }
+
+              for (const fileName of datFiles) {
+                const cleanName = stripDatExtension(fileName);
+                const progressKey = buildQuizProgressKey(cleanName);
+                const statusKey = buildQuizStatusKey(cleanName);
+                await AsyncStorage.multiRemove([progressKey, statusKey]);
+                await FileSystem.deleteAsync(`${folderPath}${fileName}`, { idempotent: true });
+              }
+
+              if (folderType === 'student') {
+                await refreshStudentLibrary();
+              } else {
+                await refreshTeacherLibrary();
+              }
+              Alert.alert('Готово', 'Все файлы успешно удалены.');
+            } catch (e) {
+              Alert.alert('Ошибка', 'Не удалось удалить некоторые файлы.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleShareStudentResult = async (file) => {
+    try {
+      const statusRaw = await AsyncStorage.getItem(buildQuizStatusKey(file.name));
+      if (!statusRaw) throw new Error('Не найден сохраненный результат.');
+      const status = JSON.parse(statusRaw);
+      if (!status?.completedAt || !Array.isArray(status?.results)) {
+        throw new Error('Для этого теста еще нет завершенных результатов.');
+      }
+      const text = buildCleanReportText({
+        title: config.title,
+        testFileName: status.testFileName || stripDatExtension(file.name),
+        userName: status.userName || userName,
+        totalTime: status.totalTime || 0,
+        results: status.results || [],
+        questionsLength: (status.questions || []).length,
+      });
+      const outName = buildReportFileName(status.userName || userName, status.testFileName || stripDatExtension(file.name));
+      const path = FileSystem.documentDirectory + outName;
+      await FileSystem.writeAsStringAsync(path, text, { encoding: FileSystem.EncodingType.UTF8 });
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Шаринг недоступен', `Файл сохранен: ${outName}`);
+        return;
+      }
+      await Sharing.shareAsync(path, {
+        mimeType: 'text/plain',
+        dialogTitle: 'Поделиться отчетом',
+        UTI: 'public.plain-text',
+      });
+    } catch (e) {
+      Alert.alert('Ошибка', e.message || 'Не удалось отправить результат.');
+    }
+  };
+
+  const handleShareResultStatus = async () => {
+    let sharePath = '';
+    try {
+      const text = buildReportText();
+      const fileName = buildReportFileName(userName, testFileName);
+      sharePath = FileSystem.cacheDirectory + fileName;
+      await FileSystem.writeAsStringAsync(sharePath, text);
+      await Sharing.shareAsync(sharePath, {
+        dialogTitle: 'Поделиться результатом',
+        mimeType: 'text/plain',
+        UTI: 'public.plain-text',
+      });
+    } catch (e) {
+      Alert.alert('Ошибка', 'Не удалось поделиться результатом.');
+    } finally {
+      if (sharePath) {
+        await FileSystem.deleteAsync(sharePath, { idempotent: true }).catch(() => { });
+      }
+    }
+  };
+
+  const handleOpenTeacherFileEditor = async (file) => {
+    try {
+      setLoading(true);
+      const encrypted = await FileSystem.readAsStringAsync(file.path, { encoding: FileSystem.EncodingType.UTF8 });
+      const decrypted = decodeEncryptedPayload(encrypted);
+      setEditFilePath(file.path);
+      setEditFileName(file.name);
+      setEditContent(decrypted);
+      setEditIsNew(false);
+      setEditIsCloud(false);
+      setScreen('edit-quiz');
+    } catch (e) {
+      Alert.alert('Ошибка', e.message || 'Не удалось открыть тест для редактирования.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateTeacherQuiz = () => {
+    setEditFilePath('');
+    setEditFileName('');
+    setEditContent(QUIZ_TEMPLATE);
+    setEditIsNew(true);
+    setEditIsCloud(false);
+    setScreen('edit-quiz');
+  };
+
+  // Вспомогательная функция для записи файла, чтобы не дублировать код
+  const performSave = async (fileName, content) => {
+    const encrypted = encodeEncryptedPayload(content);
+    const stampedName = fileName.toLowerCase().endsWith('.dat') ? fileName : `${fileName}.dat`;
+    const normalizedName = makeSafeFileName(stampedName);
+
+    await saveDatToLibrary(TEACHER_QUIZZES_DIR, normalizedName, encrypted);
+    await refreshTeacherLibrary();
+    Alert.alert('Сохранено', `Тест "${normalizedName}" успешно сохранен.`);
+    setScreen('teacher-library');
+  };
+
+  const handleSaveEditedQuiz = async () => {
+    try {
+      // 1. Валидируем контент
+      parseQuestions(editContent);
+
+      const rawName = editFileName.trim();
+      if (!rawName) {
+        Alert.alert('Ошибка', 'Пожалуйста, введите название файла');
+        return;
+      }
+
+      setLoading(true);
+
+      // Очищаем имя от расширений и спецсимволов
+      let cleanName = rawName.replace(/\.dat$/i, '');
+      const finalName = `${makeSafeFileName(cleanName)}.dat`;
+      const encrypted = encodeEncryptedPayload(editContent);
+
+      // Логика сохранения:
+      // Если это существующий файл и имя не изменилось — перезаписываем
+      const oldName = editFilePath ? editFilePath.split('/').pop() : '';
+
+      if (!editIsNew && finalName === oldName) {
+        await FileSystem.writeAsStringAsync(editFilePath, encrypted, { encoding: FileSystem.EncodingType.UTF8 });
+        Alert.alert('Сохранено', 'Изменения записаны.');
+      } else {
+        // Если имя изменилось или это новый файл — создаем новый .dat
+        await saveDatToLibrary(TEACHER_QUIZZES_DIR, finalName, encrypted);
+        Alert.alert('Сохранено', `Тест "${finalName}" успешно сохранен.`);
+      }
+
+      // 2. Если это облачный файл - обновляем и на GitHub
+      if (editIsCloud) {
+        const fileContentB64 = btoa(unescape(encodeURIComponent(encrypted)));
+        const cloudFilePath = `${CLOUD_TESTS_DIR}/${finalName}`;
+        const existingFile = await githubRequest(cloudFilePath);
+
+        await githubRequest(cloudFilePath, 'PUT', {
+          message: `Update test via editor: ${finalName}`,
+          content: fileContentB64,
+          sha: existingFile?.sha || undefined
+        });
+
+        // Обновляем в реестре (могли измениться вопросы)
+        const qCount = parseQuestions(editContent).length;
+        await syncCloudRegistry('add', {
+          id: stripDatExtension(finalName),
+          title: getStoredQuizMeta(finalName).originalTitle,
+          qCount: qCount,
+          fileName: finalName
+        });
+      }
+
+      await refreshTeacherLibrary();
+      setScreen('teacher-library');
+      Alert.alert('Успех', editIsCloud ? 'Тест сохранен локально и в облаке' : 'Тест сохранен');
+    } catch (e) {
+      Alert.alert('Ошибка формата', e.message || 'Проверьте структуру теста.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearActiveQuizProgress = async () => {
+    if (!activeProgressKey) return;
+    await AsyncStorage.removeItem(activeProgressKey);
+  };
+
+  const handleFileImport = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ type: '*/*' });
+      if (res.canceled) return;
+      const asset = res.assets[0];
+
+      const fileName = asset.name || 'imported_quiz.dat';
+      if (!fileName.toLowerCase().endsWith('.dat')) {
+        Alert.alert('Ошибка', 'Допускаются только файлы с расширением .dat');
+        return;
+      }
+
+      validateQuizAsset(asset, maxQuizFileBytes);
+
+      const encrypted = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+      try {
+        const decrypted = decodeEncryptedPayload(encrypted);
+        const parsed = parseQuestions(decrypted);
+        if (!parsed || parsed.length === 0) throw new Error();
+      } catch {
+        Alert.alert('Ошибка', 'Файл имеет неверный формат или поврежден.');
+        return;
+      }
+
+      const targetPath = STUDENT_QUIZZES_DIR + fileName;
+      await FileSystem.copyAsync({ from: asset.uri, to: targetPath });
+      await refreshStudentLibrary();
+      Alert.alert('Успех', `Тест "${fileName}" успешно добавлен.`);
+      setScreen('student-library');
+    } catch (e) {
+      Alert.alert('Ошибка импорта', e.message);
+    }
+  };
+
+  const handleUrlImport = async (url) => {
+    if (typeof url !== 'string' || !url.trim()) return;
+    const cleanUrl = url.trim();
+    try {
+      setLoading(true);
+      const resolvedUrl = validateQuizUrl(cleanUrl, allowedQuizHosts);
+      const res = await fetch(resolvedUrl);
+      if (!res.ok) throw new Error('Не удалось загрузить файл по ссылке.');
+
+      const contentLengthHeader = res.headers.get('content-length');
+      const declaredSize = contentLengthHeader ? parseInt(contentLengthHeader, 10) : null;
+      if (Number.isInteger(declaredSize) && declaredSize > maxQuizFileBytes) {
+        throw new Error(`Файл слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
+      }
+
+      const content = await res.text();
+
+      if (content.length > maxQuizFileBytes) {
+        throw new Error(`Файл слишком большой. Допустимо до ${Math.round(maxQuizFileBytes / 1024)} KB.`);
+      }
+
+      try {
+        const decrypted = decodeEncryptedPayload(content);
+        const parsed = parseQuestions(decrypted);
+        if (!parsed || parsed.length === 0) throw new Error();
+      } catch {
+        Alert.alert('Ошибка', 'Контент по ссылке не является валидным тестом (.dat).');
+        return;
+      }
+
+      let fileName = cleanUrl.split('/').pop().split('?')[0] || 'imported_quiz.dat';
+      if (!fileName.toLowerCase().endsWith('.dat')) fileName += '.dat';
+      const targetPath = STUDENT_QUIZZES_DIR + fileName;
+
+      await FileSystem.writeAsStringAsync(targetPath, content);
+      await refreshStudentLibrary();
+      Alert.alert('Успех', 'Тест успешно загружен.');
+      setFileUrl('');
+      setScreen('student-library');
+    } catch (e) {
+      Alert.alert('Ошибка', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markQuizCompleted = async (payload) => {
+    try {
+      if (!payload) return;
+
+      const sourceQuestions = payload.questions;
+      if (!sourceQuestions || sourceQuestions.length === 0) {
+        console.warn('markQuizCompleted: Missing questions in payload');
+        return;
+      }
+      const rawAnswers = payload.rawAnswers || [];
+      const times = payload.questionTimes || [];
+      const totalTimeVal = payload.totalTime !== undefined ? payload.totalTime : 0;
+
+      // ФИНАЛЬНАЯ ВЕРИФИКАЦИЯ (details)
+      const processedResults = sourceQuestions.map((q, i) => {
+        const answer = rawAnswers[i];
+
+        if (i === 1) {
+          console.log('DEBUG Q2 Raw:', JSON.stringify(q));
+        }
+
+        let isCorrect = false;
+        let formattedAnswer = '';
+
+        if (answer === null || answer === undefined) {
+          formattedAnswer = '—';
+          isCorrect = false;
+        } else if (q.type === 'multi') {
+          // Standardized extraction (0-based)
+          const rawCorrect = Array.isArray(q.a) ? q.a[0] : q.a;
+          const correctIdx = parseInt(rawCorrect, 10);
+
+          const selectedIndices = (Array.isArray(answer) ? answer : []).map(idx => parseInt(idx, 10)).filter(v => !isNaN(v));
+          const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
+
+          isCorrect = userIndex === correctIdx;
+
+          console.log(`[RE-VERIFY] Q${i + 1}: User ${userIndex} vs Correct ${correctIdx} -> ${isCorrect}`);
+          formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
+        } else {
+          // Улучшенная нормализация по просьбе пользователя
+          const userStr = String(answer || '').trim().toLowerCase();
+          const correctStr = String(q.a || '').trim().toLowerCase();
+          isCorrect = userStr === correctStr;
+
+          console.log(`[RE-VERIFY] Q${i + 1} TEXT: [User: "${userStr}"] vs [Correct: "${correctStr}"] -> ${isCorrect}`);
+          formattedAnswer = String(answer).trim();
+        }
+
+        return {
+          q: q.q,
+          userAnswer: formattedAnswer || '—',
+          correct: isCorrect,
+          time: times[i] || 0
+        };
+      });
+
+      setResults(processedResults);
+      setTotalTime(totalTimeVal);
+
+      if (activeStatusKey) {
+        const statusRaw = await AsyncStorage.getItem(activeStatusKey);
+        const status = statusRaw ? JSON.parse(statusRaw) : {};
+        const nextStatus = {
+          ...status,
+          completedAt: new Date().toISOString(),
+          results: processedResults,
+          totalTime: totalTimeVal,
+          testFileName: testFileName,
+          userName: userName,
+          questions: sourceQuestions,
+          authorId: activeAuthorId,
+        };
+        await AsyncStorage.setItem(activeStatusKey, JSON.stringify(nextStatus));
+
+        // Снимаем пометку "скрыт", если тест пересдан
+        const testId = activeAuthorId ? `${activeAuthorId}_${testFileName}` : testFileName;
+        if (permanentlyHiddenIds.includes(testId)) {
+          const nextHidden = permanentlyHiddenIds.filter(id => id !== testId);
+          setPermanentlyHiddenIds(nextHidden);
+          await AsyncStorage.setItem(CACHE_KEYS.HIDDEN_TESTS, JSON.stringify(nextHidden));
+        }
+
+        await refreshStudentLibrary();
+      }
+
+      setScreen('results');
+    } catch (error) {
+      console.error("Ошибка завершения теста:", error);
+      setScreen('results');
+    }
+  };
+
+  const handleFinish = async (payload) => {
+    // payload может быть массивом результатов или объектом со статистикой
+    const finalPayload = Array.isArray(payload) ? { results: payload } : payload;
+    await markQuizCompleted(finalPayload);
+    await recordTestCompletion(testFileName, activeAuthorId);
+
+    // Сохраняем ID как пройденный для умного счетчика
+    const testId = `${activeAuthorId}_${stripDatExtension(testFileName)}`;
+    const completedRaw = await AsyncStorage.getItem(COMPLETED_IDS_KEY);
+    const completed = completedRaw ? JSON.parse(completedRaw) : [];
+    if (!completed.includes(testId)) {
+      const nextCompleted = [...completed, testId];
+      await AsyncStorage.setItem(COMPLETED_IDS_KEY, JSON.stringify(nextCompleted));
+      checkForUpdates(); // Пересчитываем счетчик мгновенно
+    }
+
+    if (activeProgressKey) {
+      await AsyncStorage.removeItem(activeProgressKey);
+    }
+
+  };
+
+  const _startQuiz = (parsedQuestions, fileName = 'quiz', sourcePath = '', authorId = '') => {
+    const progressKey = buildQuizProgressKey(fileName, authorId);
+    const statusKey = buildQuizStatusKey(fileName, authorId);
+    setQuestions(parsedQuestions);
+    setTestFileName(fileName);
+    setActiveAuthorId(authorId);
+    setActiveQuizPath(sourcePath);
+    setActiveProgressKey(progressKey);
+    setActiveStatusKey(statusKey);
+    setResumeData(null);
+    setResultsReadOnly(false);
+    setResults([]);
+    setActiveSessionId(Date.now().toString());
+    setScreen('prestart');
+    AsyncStorage.setItem(
+      statusKey,
+      JSON.stringify({ startedAt: new Date().toISOString(), completedAt: null, authorId }),
+    ).catch(() => { });
+  };
+
+  const handleStartQuizAction = async () => {
+    const isStillLocked = await getTestCooldown(testFileName, activeAuthorId);
+    if (isStillLocked) {
+      Alert.alert("Ошибка", "Этот тест уже был пройден. Повторная попытка будет доступна через 24 часа.");
+      return;
+    }
+    setScreen('quiz');
+  };
+
+  const handleAbortQuiz = () => {
+    Alert.alert(
+      'Выход',
+      'Прогресс будет сохранен автоматически. Вы действительно хотите выйти?',
+      [
+        {
+          text: 'Выйти',
+          style: 'destructive',
+          onPress: () => {
+            setScreen('welcome');
+          },
+        },
+        { text: 'Отмена', style: 'cancel' },
+      ],
+    );
+  };
+
+  const handleResetCooldowns = async () => {
+    Alert.alert(
+      "Сбросить блокировки?",
+      "Все пройденные тесты снова станут доступны для прохождения.",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Сбросить", onPress: async () => {
+            try {
+              await FileSystem.deleteAsync(TRACKING_FILE, { idempotent: true });
+              await refreshStudentLibrary();
+              Alert.alert("Успех", "Все блокировки тестов сброшены.");
+            } catch (e) {
+              Alert.alert("Ошибка", "Не удалось сбросить блокировки.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const buildReportText = () => {
+    return buildCleanReportText({
+      title: config.title,
+      testFileName,
+      userName,
+      totalTime,
+      results,
+      questionsLength: questions.length,
+    });
+  };
+
+
+  const handleSendReport = async () => {
+    try {
+      const isAvailable = await MailComposer.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Почта недоступна', 'На устройстве не настроен почтовый клиент.');
+        return;
+      }
+      const text = buildReportText();
+      await MailComposer.composeAsync({
+        recipients: reportEmail ? [reportEmail] : [],
+        subject: `Результаты — ${userName || 'Студент'} — ${config.title}`,
+        body: text,
+      });
+    } catch (e) {
+      Alert.alert('Ошибка отправки', e.message);
+    }
+  };
+
+  const getGroupedQuizzes = () => {
+    // Группируем локальные файлы по авторам на основе префиксов
+    const groups = {};
+
+    studentLibraryFiles
+      .filter(file => {
+        const testId = file.authorId ? `${file.authorId}_${stripDatExtension(file.displayName)}` : stripDatExtension(file.displayName);
+        const isHidden = permanentlyHiddenIds.includes(testId);
+
+        if (!showHiddenTests && isHidden) return false;
+
+        const search = librarySearch.toLowerCase();
+        return file.displayName.toLowerCase().includes(search) || (file.authorId && file.authorId.toLowerCase().includes(search));
+      })
+      .forEach(file => {
+        const isSystem = file.authorId === 'System';
+        const isCloud = !!file.authorId && !isSystem;
+        const authorKey = isSystem ? 'system_teacher' : (isCloud ? file.authorId : 'local_teacher');
+
+        let authorName = '';
+        if (isSystem) {
+          authorName = 'Обучающие тесты';
+        } else if (isCloud) {
+          authorName = subscriptions.find(s => s.owner === file.authorId)?.name || MASTER_TEACHER.name;
+        } else {
+          authorName = LOCAL_TEACHER_NAME;
+        }
+
+        if (!groups[authorKey]) {
+          groups[authorKey] = {
+            title: isSystem ? authorName : `Источник: ${authorName}`,
+            data: []
+          };
+        }
+        groups[authorKey].data.push(file);
+      });
+
+    // Сортируем секции: System -> Master -> Local -> Остальные
+    return Object.values(groups).sort((a, b) => {
+      const isASystem = a.title === 'Обучающие тесты';
+      const isBSystem = b.title === 'Обучающие тесты';
+      if (isASystem) return -1;
+      if (isBSystem) return 1;
+
+      const isAMaster = a.title.includes(MASTER_TEACHER.name);
+      const isBMaster = b.title.includes(MASTER_TEACHER.name);
+      if (isAMaster) return -1;
+      if (isBMaster) return 1;
+
+      const isALocal = a.title.includes(LOCAL_TEACHER_NAME);
+      const isBLocal = b.title.includes(LOCAL_TEACHER_NAME);
+      if (isALocal) return 1;
+      if (isBLocal) return -1;
+
+      return a.title.localeCompare(b.title);
+    });
+  };
+
+  const renderHeader = (title, onBack, rightContent) => (
+    <View style={[
+      styles.headerContainer,
+      { paddingTop: insets.top + 45, minHeight: 60 + insets.top, flexDirection: 'row', alignItems: 'center' }
+    ]}>
+      {/* Абсолютный заголовок — мертво по центру */}
+      <Text style={[
+        styles.headerTitle,
+        { position: 'absolute', left: 0, right: 0, textAlign: 'center', zIndex: 0 }
+      ]}>
+        {title}
+      </Text>
+
+      {/* Левая часть */}
+      <View style={{ flex: 1, alignItems: 'flex-start', zIndex: 1 }}>
+        {onBack ? (
+          <TouchableOpacity onPress={onBack} style={styles.headerBack}>
+            <Ionicons name="chevron-back" size={24} color={C.accent} />
+            <Text style={styles.headerBackText}>Назад</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Правая часть */}
+      <View style={{ flex: 1, alignItems: 'flex-end', zIndex: 1 }}>
+        {rightContent}
+      </View>
+    </View>
+  );
+
+  const renderSmartActionModal = () => {
+    if (!actionTargetTest) return null;
+    const { item, status, testId, isHidden } = actionTargetTest;
+    const isCloud = !!item.authorId;
+    const isOrphaned = status.isOrphaned;
+
+    // StatusKey for deletion
+    const fileName = item.path.split('/').pop();
+    const statusKey = buildQuizStatusKey(fileName);
+
+    const canDelete = !isCloud || isOrphaned;
+
+    return (
+      <Modal visible={actionModalVisible} transparent animationType="fade" onRequestClose={() => setActionModalVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setActionModalVisible(false)}>
+          <View style={styles.actionModalContent}>
+            <Text style={styles.actionModalTitle}>{item.displayName}</Text>
+
+            {isHidden ? (
+              <TouchableOpacity style={styles.actionOption} onPress={() => handleRestoreTest(testId)}>
+                <Ionicons name="eye-outline" size={22} color={C.accent} />
+                <Text style={styles.actionOptionText}>Восстановить в списке</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.actionOption} onPress={() => handleHideTest(testId)}>
+                <Ionicons name="eye-off-outline" size={22} color={C.textSecondary} />
+                <Text style={styles.actionOptionText}>Скрыть из списка</Text>
+              </TouchableOpacity>
+            )}
+
+            {canDelete && (
+              <TouchableOpacity
+                style={[styles.actionOption, styles.actionOptionLast]}
+                onPress={() => handleDeleteTestPermanently(item.path, statusKey, testId)}
+              >
+                <Ionicons name="trash-outline" size={22} color={C.danger} />
+                <Text style={[styles.actionOptionText, styles.actionOptionDanger]}>Удалить навсегда</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={{ marginTop: 20, alignItems: 'center' }}
+              onPress={() => setActionModalVisible(false)}
+            >
+              <Text style={{ color: C.textDisabled, fontWeight: '600' }}>Закрыть</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
+
+  const renderContent = () => {
+    try {
+      if (screen === 'welcome') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+
+            <TouchableOpacity
+              style={[styles.helpBtn, { position: 'absolute', top: insets.top + 10, right: 16 }]}
+              onPress={() => {
+                setHelpType('student');
+                setHelpVisible(true);
+              }}
+            >
+              <Text style={styles.helpBtnText}>?</Text>
+            </TouchableOpacity>
+
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior="padding"
+            >
+              <View style={L.halfBottom}>
+                <View style={{ alignItems: 'center', marginBottom: 24 }}>
+                  <View style={[styles.logoCircle, { backgroundColor: 'rgba(91, 139, 245, 0.08)', width: 120, height: 120, borderRadius: 60, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(91, 139, 245, 0.2)' }]}>
+                    <MaterialCommunityIcons name="brain" size={80} color={C.accent} />
+                  </View>
+                  {newTestsCount > 0 && (
+                    <View style={{ backgroundColor: 'rgba(76, 175, 80, 0.1)', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: C.success }}>
+                      <Text style={{ color: C.success, fontWeight: '700', textAlign: 'center' }}>
+                        Появились новые задания ({newTestsCount}) ☁️
+                      </Text>
+                    </View>
+                  )}
+
+                  <Text style={styles.welcomeTitle}>Вход в систему</Text>
+                  <Text style={styles.welcomeDesc}>{config.welcomeDesc}</Text>
+                </View>
+                <Text style={styles.label}>Ваше имя</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Введите ваше имя..."
+                  placeholderTextColor={C.textDisabled}
+                  value={userName}
+                  onChangeText={handleNameChange}
+                  autoCorrect={false}
+                />
+                <Btn
+                  label="Войти"
+                  onPress={handleContinueStudent}
+                  disabled={!userName.trim()}
+                />
+                <View style={{ marginTop: 20 }}>
+                  <Btn label="Выход" onPress={handleExitApp} variant="black" />
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        );
+      }
+
+      if (screen === 'teacher') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              "Режим учителя",
+              () => setScreen('welcome'),
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => setScreen('teacher-profile')}
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    paddingHorizontal: 12,
+                    height: 34,
+                    borderRadius: 8,
+                    marginRight: 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: C.border
+                  }}
+                >
+                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>NEW</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.helpBtn}
+                  onPress={() => {
+                    setHelpType('teacher');
+                    setHelpVisible(true);
+                  }}
+                >
+                  <Text style={styles.helpBtnText}>?</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Конфиг блок растягивается на весь экран */}
+            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 10 }}>
+              <Text style={[styles.cardTitle, { fontSize: 14, color: C.textDisabled, marginBottom: 10 }]}>
+                ⚙️ Системная информация и конфиг
+              </Text>
+
+              <ScrollView style={{ flex: 1 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                {renderConfigSection("🌐 Удаленный конфиг (GitHub)", remoteConfigSnapshot)}
+                {renderConfigSection("💾 Локальный конфиг (Cache)", localConfig)}
+                {renderConfigSection("⚙️ Системная информация", {
+                  version: APP_VERSION,
+                  endpoints: API_ENDPOINTS,
+                  cooldown: COOLDOWN_SETTINGS,
+                  metadata: APP_METADATA
+                })}
+
+                <Card style={{ padding: 12, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 12 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 8 }}>🛠 Инструменты разработчика</Text>
+                  <Btn label="Сбросить все блокировки" onPress={handleResetCooldowns} variant="black" style={{ height: 40 }} />
+                </Card>
+              </ScrollView>
+            </View>
+
+            {/* Кнопка в самом низу */}
+            <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg }}>
+              <Btn
+                label="📁 Управление тестами"
+                onPress={async () => {
+                  await refreshTeacherLibrary();
+                  setResultsOrigin('teacher');
+                  setScreen('teacher-library');
+                }}
+                style={{ height: 60, backgroundColor: '#FFA700' }}
+              />
+
+              <Text style={[styles.cardDesc, { textAlign: 'center', marginTop: 8, fontSize: 12 }]}>
+                Создание и редактирование ваших тестов
+              </Text>
+            </View>
+          </View>
+        );
+      }
+
+      if (screen === 'teacher-profile') {
+        return (
+          <TeacherProfileScreen
+            teacherProfile={teacherProfile}
+            setTeacherProfile={setTeacherProfile}
+            onBack={() => setScreen('teacher')}
+          />
+        );
+      }
+
+      if (screen === 'teacher-profile-setup') {
+        return (
+          <TeacherProfileScreen
+            title="Новый профиль"
+            teacherProfile={teacherProfile}
+            setTeacherProfile={setTeacherProfile}
+            onBack={() => setScreen('teacher')}
+          />
+        );
+      }
+
+      if (screen === 'student-library') {
+        const groupedData = getGroupedQuizzes();
+
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              "Доступные тесты",
+              () => setScreen('welcome'),
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => setShowHiddenTests(!showHiddenTests)}
+                  style={[styles.fileActionBtn, { borderColor: showHiddenTests ? C.accent : C.border, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}
+                >
+                  <Ionicons name={showHiddenTests ? "eye-outline" : "eye-off-outline"} size={14} color={showHiddenTests ? C.accent : C.textSecondary} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleManualSync}
+                  style={[styles.fileActionBtn, { borderColor: C.success, height: 24, paddingVertical: 0, justifyContent: 'center', marginRight: 8 }]}
+                  activeOpacity={0.7}
+                >
+                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <Ionicons name="sync" size={14} color={C.success} />
+                  </Animated.View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setScreen('student-subscriptions')}
+                  style={[styles.fileActionBtn, { borderColor: C.accent, height: 24, paddingVertical: 0, justifyContent: 'center' }]}
+                >
+                  <Text style={{ color: C.accent, fontWeight: '700', fontSize: 11 }}>Подписки</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={L.libraryWrap}>
+              <View style={{ marginBottom: 16 }}>
+                <TextInput
+                  style={[styles.input, { height: 46, marginBottom: 0, backgroundColor: C.surface }]}
+                  placeholder="🔍 Поиск тестов..."
+                  placeholderTextColor={C.textDisabled}
+                  value={librarySearch}
+                  onChangeText={setLibrarySearch}
+                  autoCorrect={false}
+                />
+              </View>
+              <SectionList
+                sections={groupedData}
+                keyExtractor={(item) => item.path}
+                stickySectionHeadersEnabled={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={isRefreshing}
+                    onRefresh={handlePullToRefresh}
+                    tintColor={C.accent}
+                    colors={[C.accent]}
+                  />
+                }
+                renderSectionHeader={({ section: { title } }) => (
+                  <View style={{ backgroundColor: C.bg, paddingVertical: 8, marginTop: 8 }}>
+                    <Text style={{ color: C.textSecondary, fontWeight: '700', fontSize: 14 }}>{title}</Text>
+                  </View>
+                )}
+                ListEmptyComponent={
+                  <View style={{ alignItems: 'center', marginTop: 40 }}>
+                    <Text style={styles.welcomeDesc}>У вас пока нет скачанных тестов.</Text>
+                    <Btn label="Обновить облако" onPress={checkForUpdates} style={{ marginTop: 12 }} />
+                  </View>
+                }
+                renderItem={({ item }) => {
+                  const status = studentQuizStatus[item.path] || {};
+                  const isLocked = status.isLocked;
+                  const testId = item.authorId ? `${item.authorId}_${stripDatExtension(item.displayName)}` : stripDatExtension(item.displayName);
+                  const isHidden = permanentlyHiddenIds.includes(testId);
+
+                  return (
+                    <View style={[styles.libraryRow, isHidden && { opacity: 0.5 }]}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={styles.libraryTitle}>
+                            {item.authorId ? '☁️ ' : ''}{item.displayName}
+                          </Text>
+                          {isHidden && (
+                            <View style={{ backgroundColor: C.border, paddingHorizontal: 4, borderRadius: 2, marginLeft: 6 }}>
+                              <Text style={{ color: C.textSecondary, fontSize: 8, fontWeight: '700' }}>СКРЫТ</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <View style={{ marginTop: 4 }}>
+                          {(() => {
+                            const correctCount = status.results?.filter(r => r.correct).length || 0;
+                            const totalCount = item.questionCount || 1;
+                            const hasResult = status.completedAt || (Array.isArray(status.results) && status.results.length > 0);
+
+                            if (!hasResult) {
+                              return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начато</Text>;
+                            }
+                            if (correctCount === totalCount && totalCount > 0) {
+                              return <Text style={{ color: C.success, fontSize: 12, fontWeight: '700' }}>🌟 Отлично! {correctCount}/{totalCount}</Text>;
+                            }
+                            return <Text style={{ color: C.textSecondary, fontSize: 12 }}>📖 Пройдено: {correctCount}/{totalCount}</Text>;
+                          })()}
+                        </View>
+
+                        <Text style={[styles.libraryMeta, { marginTop: 4, fontSize: 11 }]}>
+                          Вопросов: {item.questionCount}
+                        </Text>
+
+                        {status.isOrphaned && (
+                          <Text style={{ color: C.textSecondary, fontSize: 10, fontStyle: 'italic', marginTop: 2 }}>
+                            (Удален из облака)
+                          </Text>
+                        )}
+                        {isLocked && (
+                          <Text style={{ color: C.danger, fontSize: 11, marginTop: 2 }}>
+                            Доступен: {formatUnlockTime(isLocked)}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {/* 1. Посмотреть результат */}
+                        {(status.completedAt || (Array.isArray(status.results) && status.results.length > 0)) ? (
+                          <TouchableOpacity
+                            onPress={() => handleViewStudentResults(item)}
+                            style={[styles.fileActionBtn, { marginRight: 8, borderColor: C.accent }]}
+                          >
+                            <Ionicons name="list-outline" size={20} color={C.accent} />
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {/* 2. Кнопка пройти тест */}
+                        <TouchableOpacity
+                          onPress={() => handleOpenStudentQuiz(item)}
+                          style={[styles.fileActionBtn, { backgroundColor: isLocked ? C.border : 'transparent', marginRight: 8 }]}
+                          disabled={!!isLocked}
+                        >
+                          <Ionicons
+                            name={status.hasProgress ? "play-circle-outline" : "chevron-forward-outline"}
+                            size={20}
+                            color={isLocked ? C.textDisabled : C.accent}
+                          />
+                        </TouchableOpacity>
+
+                        {/* 3. Кнопка поделиться файлом теста */}
+                        <TouchableOpacity
+                          onPress={() => handleShareFile(item)}
+                          style={[styles.fileActionBtn, { marginRight: 8, borderColor: C.success }]}
+                        >
+                          <Ionicons name="share-outline" size={20} color={C.success} />
+                        </TouchableOpacity>
+
+                        {/* 4. Смарт-кнопка управления (Modal) */}
+                        {(() => {
+                          const isCloud = !!item.authorId;
+                          const isCompleted = status.completedAt || (Array.isArray(status.results) && status.results.length > 0);
+                          const isOrphaned = status.isOrphaned;
+
+                          // Показываем кнопку только если завершен или удален из облака (сирота)
+                          if (!isCompleted && !isOrphaned && isCloud) return null;
+
+                          return (
+                            <TouchableOpacity
+                              onPress={() => {
+                                setActionTargetTest({ item, status, testId, isHidden });
+                                setActionModalVisible(true);
+                              }}
+                              style={[styles.fileActionBtn, { borderColor: isHidden ? C.accent : C.border }]}
+                            >
+                              <Ionicons name="ellipsis-vertical" size={20} color={isHidden ? C.accent : C.textSecondary} />
+                            </TouchableOpacity>
+                          );
+                        })()}
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+              <Btn
+                label="Добавить тесты"
+                onPress={() => { setScreen('add-test'); }}
+                variant="black"
+                style={{ marginTop: 16 }}
+              />
+            </View>
+          </View>
+        );
+      }
+
+      if (screen === 'student-subscriptions') {
+        return (
+          <TeachersScreen
+            subscriptions={subscriptions}
+            setSubscriptions={setSubscriptions}
+            onBack={() => {
+              setScreen('student-library');
+              checkForUpdates();
+            }}
+          />
+        );
+      }
+
+      if (screen === 'teacher-library') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              "На устройстве",
+              () => setScreen('teacher'),
+              <TouchableOpacity
+                onPress={() => setScreen('cloud-manager')}
+                style={styles.headerBack}
+              >
+                <Ionicons name="cloud-outline" size={22} color={C.accent} />
+                <Text style={styles.headerBackText}> Облако</Text>
+              </TouchableOpacity>
+            )}
+            <View style={L.libraryWrap}>
+              {/* ОПТИМИЗИРОВАНО: Добавлены параметры для FlatList */}
+              <FlatList
+                data={teacherLibraryFiles}
+                keyExtractor={(item) => item.path}
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
+                ListEmptyComponent={<Text style={styles.welcomeDesc}>Нет сохраненных тестов.</Text>}
+                renderItem={({ item }) => (
+                  <View style={styles.libraryRow}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={styles.libraryTitle}>{getStoredQuizMeta(item.name).originalTitle}</Text>
+                        {cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) && (
+                          <Text style={{ marginLeft: 6 }}>☁️</Text>
+                        )}
+                      </View>
+                      <Text style={[styles.libraryMeta, { color: C.accent, fontWeight: '600' }]}>
+                        Вопросов: {item.questionCount || 0} | Размер: {Math.round(item.size / 1024)} KB
+                      </Text>
+                      <Text style={[styles.libraryMeta, { fontSize: 11, marginTop: 2 }]}>
+                        Создан: {formatNiceDate(getStoredQuizMeta(item.name).createdAt || item.mtime * 1000)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleOpenTeacherFileEditor(item)} style={styles.fileActionBtn}>
+                      <Ionicons name="create-outline" size={24} color={C.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const isPublished = cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name));
+                        if (isPublished) {
+                          handleUnpublishFromCloud(item);
+                        } else {
+                          handlePublishToCloud(item);
+                        }
+                      }}
+                      style={[styles.fileActionBtn, { backgroundColor: cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? '#111' : '#FFD700', borderWidth: 0 }]}
+                    >
+                      <Ionicons
+                        name={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "cloud-offline-outline" : "cloud-upload-outline"}
+                        size={22}
+                        color={cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) ? "#fff" : "#000"}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleShareFile(item, true)} style={styles.fileActionBtn}>
+                      <Ionicons name="share-outline" size={24} color={C.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteLibraryFile(item, 'teacher')} style={styles.deleteBtn}>
+                      <Text style={styles.deleteBtnText}>🗑</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+              <Btn label="Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
+              <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10 }} />
+              <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles(TEACHER_QUIZZES_DIR, 'teacher')} variant="black" style={{ marginTop: 10 }} />
+            </View>
+          </View>
+        );
+      }
+
+      if (screen === 'edit-quiz') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              editIsNew ? 'Создание теста' : 'Редактор',
+              () => setScreen(editIsCloud ? 'cloud-manager' : 'teacher-library')
+            )}
+            <View style={styles.editorWrap}>
+              <Text style={[styles.label, { marginBottom: 4, marginLeft: 4 }]}>Имя файла:</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: 12, backgroundColor: C.surfaceHigh }]}
+                placeholder="Название файла"
+                placeholderTextColor={C.textDisabled}
+                value={editFileName}
+                onChangeText={setEditFileName}
+              />
+              <Text style={[styles.label, { marginBottom: 4, marginLeft: 4 }]}>Содержимое (CSV):</Text>
+              <TextInput
+                style={styles.editorInput}
+                multiline
+                value={editContent}
+                onChangeText={setEditContent}
+                autoCapitalize="none"
+                autoCorrect={false}
+                textAlignVertical="top"
+              />
+              <View style={styles.editorActions}>
+                <Btn label="Сохранить" onPress={handleSaveEditedQuiz} disabled={!!loading} style={{ backgroundColor: '#FFA700' }} />
+                <Btn label="Отмена" variant="black" onPress={() => setScreen('teacher-library')} style={{ marginTop: 8 }} />
+              </View>
+            </View>
+          </View>
+        );
+      }
+
+      if (screen === 'loading') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+              {renderHeader(
+                "Загрузка теста",
+                () => setScreen('welcome')
+              )}
+            </View>
+
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior="padding"
+            >
+              <View style={L.halfBottom}>
+                {loading ? (
+                  <View style={{ paddingBottom: 40 }}>
+                    <ActivityIndicator color={C.accent} size="large" />
+                  </View>
+                ) : (
+                  <>
+                    <Text style={[styles.welcomeDesc, { marginBottom: 24 }]}>
+                      {config.loadingDesc}
+                    </Text>
+                    <Btn label="📂 Выбрать .dat файл" onPress={handleLoadDat} />
+
+                    <View style={L.divider}>
+                      <View style={L.dividerLine} />
+                      <Text style={L.dividerText}>ИЛИ</Text>
+                      <View style={L.dividerLine} />
+                    </View>
+
+                    <Text style={[styles.label, { marginBottom: 8 }]}>Ссылка на файл:</Text>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 12 }]}
+                      placeholder="https://..."
+                      placeholderTextColor={C.textDisabled}
+                      value={fileUrl}
+                      onChangeText={setFileUrl}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                    <Btn
+                      label="🌐 Загрузить по ссылке"
+                      onPress={handleLoadByUrl}
+                      disabled={!fileUrl || fileUrl.trim().length < 10}
+                      variant="ghost"
+                    />
+                  </>
+                )}
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        );
+      }
+
+      if (screen === 'prestart') {
+        const prestartText =
+          config.prestartText ||
+          `Тест загружен успешно!\nВопросов: ${questions.length}\nВнимательно читайте каждый вопрос. При множественном выборе возможно несколько правильных ответов. Кнопка «Вперед» позволяет переходить к следующему вопросу.\nУдачи!`;
+
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              "Готов к тесту?",
+              handleBackFromPrestart
+            )}
+
+            <View style={L.halfBottom}>
+              <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                <View style={styles.logoCircle}>
+                  <Text style={styles.logoText}>!</Text>
+                </View>
+                <Text style={[styles.welcomeTitle, { marginBottom: 4 }]}>{testFileName}</Text>
+                <Text style={[styles.welcomeDesc]}>Вопросов: {questions.length}</Text>
+              </View>
+              <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+                <Text style={[styles.welcomeDesc, { textAlign: 'left', lineHeight: 24 }]}>
+                  {prestartText}
+                </Text>
+              </ScrollView>
+              <Btn label="🚀 Начать тест" onPress={handleStartQuizAction} style={{ marginTop: 24 }} />
+              <Btn label="Нет, позже" onPress={handleBackFromPrestart} variant="black" style={{ marginTop: 12 }} />
+            </View>
+          </View>
+        );
+      }
+
+      if (screen === 'quiz') {
+        return (
+          <QuizScreen
+            key={activeSessionId}
+            questions={questions}
+            testFileName={testFileName}
+            userName={userName}
+            config={config}
+            activeProgressKey={activeProgressKey}
+            onFinish={handleFinish}
+            onAbort={handleAbortQuiz}
+            initialData={resumeData}
+          />
+        );
+      }
+
+      if (screen === 'results') {
+        const score = results.filter(r => r && r.correct).length;
+        const total = questions.length;
+        const percent = Math.round((score / total) * 100);
+        const passed = percent >= 60;
+
+        return (
+          <View style={safeStyle} key={activeSessionId}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              resultsReadOnly ? 'Результаты (архив)' : 'Ваш результат',
+              null
+            )}
+
+            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+              <Card style={[styles.scoreCard, { borderColor: passed ? C.success : C.danger }]}>
+                <Text style={[styles.scorePercent, { color: passed ? C.success : C.danger }]}>
+                  {percent}%
+                </Text>
+                <Text style={styles.scoreLabel}>{score} из {total} верно</Text>
+                <Text style={[styles.scoreVerdict, { color: passed ? C.success : C.danger }]}>
+                  {passed ? '✅ Тест пройден' : '❌ Тест не пройден'}
+                </Text>
+                <Text style={[styles.scoreVerdict, { color: C.textSecondary }]}>⏱ {formatTime(totalTime)}</Text>
+                {userName ? <Text style={[styles.scoreMeta, { marginTop: 4 }]}>👤 {userName}</Text> : null}
+              </Card>
+
+              {results.map((item, i) => {
+                if (!item) return null;
+                return (
+                  <View
+                    key={i}
+                    style={[styles.resultRow, { borderLeftColor: item.correct ? C.success : C.danger }]}
+                  >
+                    <View style={styles.resultHeader}>
+                      <Text style={styles.resultNum}>{i + 1}</Text>
+                      <Text style={[styles.resultMark, { color: item.correct ? C.success : C.danger }]}>
+                        {item.correct ? '✅' : '❌'}
+                      </Text>
+                      <Text style={styles.resultTime}>⏱ {formatTime(item.time)}</Text>
+                    </View>
+                    <Text style={styles.resultQ}>{item.q}</Text>
+                    {!item.correct && (
+                      <>
+                        <Text style={[styles.resultQ, { color: C.danger, marginTop: 4 }]}>
+                          Ваш ответ: {String(item.userAnswer || '—')}
+                        </Text>
+                        <Text style={[styles.resultQ, { color: C.success, marginTop: 2 }]}>
+                          Правильный ответ: {(() => {
+                            const q = questions[i];
+                            if (!q) return '—';
+                            if (q.type === 'multi') {
+                              return (q.a || []).map(idx => q.opts[parseInt(idx, 10)]).join(', ');
+                            }
+                            return String(q.a);
+                          })()}
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.resultsActions}>
+
+
+              <TouchableOpacity onPress={handleShareResultStatus} style={[styles.btn, { backgroundColor: C.accent, marginBottom: 12 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name="share-social" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Поделиться результатом</Text>
+                </View>
+              </TouchableOpacity>
+
+              <Btn
+                label="К списку тестов"
+                variant="black"
+                onPress={() => {
+                  refreshStudentLibrary();
+                  setScreen('student-library');
+                }}
+              />
+            </View>
+          </View>
+        );
+      }
+
+
+
+      if (screen === 'add-test') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+              {renderHeader(
+                "Загрузка тестов",
+                () => { setScreen('student-library'); }
+              )}
+            </View>
+
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior="padding"
+            >
+              <View style={[L.halfBottom, { justifyContent: 'center' }]}>
+                <Text style={[styles.welcomeDesc, { marginBottom: 20 }]}>
+                  Вы можете импортировать файл .dat с вашего устройства или загрузить его по прямой ссылке.
+                </Text>
+
+                <Btn
+                  label="📄 Импортировать с устройства (.dat)"
+                  onPress={handleFileImport}
+                />
+
+                <View style={L.divider}>
+                  <View style={L.dividerLine} />
+                  <Text style={L.dividerText}>ИЛИ</Text>
+                  <View style={L.dividerLine} />
+                </View>
+
+                <View style={{ gap: 8 }}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="https://example.com/quiz.dat"
+                    placeholderTextColor={C.textDisabled}
+                    value={fileUrl}
+                    onChangeText={setFileUrl}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Btn
+                    label="🔗 Загрузить по ссылке"
+                    onPress={() => handleUrlImport(fileUrl)}
+                    disabled={!fileUrl.trim()}
+                    variant="ghost"
+                  />
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        );
+      }
+
+      if (screen === 'cloud-manager') {
+        return (
+          <View style={safeStyle}>
+            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+            {renderHeader(
+              "Облако (GitHub)",
+              () => setScreen('teacher-library')
+            )}
+            <View style={L.libraryWrap}>
+              <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
+                Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
+              </Text>
+              <FlatList
+                data={cloudRegistry}
+                keyExtractor={(item) => item.id}
+                ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
+                renderItem={({ item }) => {
+                  if (!item || !item.id || !item.title) return null;
+                  return (
+                    <View style={styles.libraryRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.libraryTitle}>{item.title}</Text>
+                        <Text style={styles.libraryMeta}>
+                          ID: {item.id} | Вопросов: {item.qCount}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => handleOpenCloudFileEditor(item)}
+                        style={[styles.fileActionBtn, { marginRight: 8 }]}
+                      >
+                        <Ionicons name="create-outline" size={24} color={C.accent} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
+                        style={[styles.deleteBtn, { opacity: loading ? 0.5 : 1 }]}
+                        disabled={!!loading}
+                        accessibilityState={{ disabled: !!loading }}
+                      >
+                        {loading ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+              />
+            </View>
+          </View>
+        );
+      }
+      return null;
+    } catch (error) {
+      console.error("Render Error:", error);
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#1a1a2e' }}>
+          <Text style={{ color: '#ff4d4d', fontSize: 16, fontWeight: '700', marginBottom: 8 }}>🔴 Ошибка рендера (screen: "{screen}")</Text>
+          <Text style={{ color: '#fff', fontSize: 13, textAlign: 'center' }}>{error.message}</Text>
+        </View>
+      );
+    }
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      {renderContent()}
+      <HelpModal
+        visible={helpVisible}
+        onClose={() => setHelpVisible(false)}
+        type={helpType}
+        config={config}
+      />
+      {renderSmartActionModal()}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────
+// LOCAL STYLES
+// ─────────────────────────────────────────────
+const L = StyleSheet.create({
+  halfBottom: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+  },
+  libraryWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  backBtn: {
+    paddingVertical: 10,
+    paddingRight: 16,
+    minWidth: 90,
+    justifyContent: 'center',
+  },
+  backBtnText: {
+    color: C.accent,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: C.textPrimary,
+    textAlign: 'center',
+  },
+  quizBody: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  navBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  navBtnText: {
+    color: C.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  abortBtn: {
+    marginTop: 8,
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.danger,
+    backgroundColor: 'transparent',
+  },
+  abortBtnText: {
+    color: C.danger,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: C.border,
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: C.textDisabled,
+    fontSize: 12,
+  },
+});
