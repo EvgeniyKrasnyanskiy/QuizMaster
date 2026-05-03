@@ -3194,7 +3194,7 @@ export default function App() {
               <Btn
                 label="К списку тестов"
                 variant="black"
-                style={{ borderColor: C.accent }}
+                style={{ borderColor: '#00BFFF' }}
                 onPress={() => {
                   refreshStudentLibrary();
                   setScreen('student-library');
