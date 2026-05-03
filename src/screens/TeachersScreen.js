@@ -114,7 +114,8 @@ export default function TeachersScreen({
         Alert.alert("Ошибка", `Репозиторий "${repoName}" у пользователя @${username} не найден. Проверьте правильность имени.`);
       }
     } catch (e) {
-      Alert.alert("Ошибка сети", "Не удалось проверить учителя. Проверьте интернет-соединение.");
+      const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : "Не удалось проверить учителя. Проверьте интернет-соединение.";
+      Alert.alert("Ошибка сети", msg);
     } finally {
       setLoading(false);
     }

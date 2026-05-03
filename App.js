@@ -393,8 +393,9 @@ export default function App() {
       }
     } catch (e) {
       setConfigSyncFailed(true);
+      const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : (e.message || 'Не удалось загрузить удаленный конфиг.');
       if (!silent) {
-        Alert.alert('Ошибка синхронизации', e.message || 'Не удалось загрузить удаленный конфиг.');
+        Alert.alert('Ошибка синхронизации', msg);
       }
     } finally {
       clearTimeout(timeoutId);
@@ -522,7 +523,7 @@ export default function App() {
       return response.json();
     } catch (e) {
       clearTimeout(timeoutId);
-      if (e.name === 'AbortError') throw new Error(`Превышено время ожидания ответа (timeout) от ${activeOwner}`);
+      if (e.name === 'AbortError') throw new Error('Request timed out. Please check your internet connection.');
       throw e;
     }
   };
@@ -1565,9 +1566,10 @@ export default function App() {
       setFileUrl('');
       _startQuiz(parsedQuestions, stripDatExtension(stored.name), stored.path);
     } catch (e) {
+      const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : (e.message || '');
       Alert.alert(
         'Ошибка загрузки',
-        'Не удалось загрузить или обработать тест.\n\n' + (e.message || ''),
+        'Не удалось загрузить или обработать тест.\n\n' + msg,
       );
     } finally {
       clearTimeout(timeoutId);
@@ -2123,7 +2125,8 @@ export default function App() {
       setFileUrl('');
       setScreen('student-library');
     } catch (e) {
-      Alert.alert('Ошибка', e.message);
+      const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : e.message;
+      Alert.alert('Ошибка', msg);
     } finally {
       setLoading(false);
     }

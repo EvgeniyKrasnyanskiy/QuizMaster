@@ -81,7 +81,8 @@ export default function TeacherProfileScreen({
           handleReset(); // Предлагаем сбросить, если соединение протухло
         }
       } catch (e) {
-        Alert.alert("Ошибка сети", e.message);
+        const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : e.message;
+        Alert.alert("Ошибка сети", msg);
       } finally {
         setLoading(false);
       }
@@ -152,7 +153,8 @@ export default function TeacherProfileScreen({
         throw new Error(err.message || "Ошибка проверки репозитория");
       }
     } catch (e) {
-      Alert.alert("Ошибка валидации", e.message);
+      const msg = e.name === 'AbortError' ? 'Request timed out. Please check your internet connection.' : e.message;
+      Alert.alert("Ошибка валидации", msg);
     } finally {
       setLoading(false);
     }

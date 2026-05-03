@@ -10,7 +10,7 @@ export const COOLDOWN_SETTINGS = {
   MS: 1 * 60 * 60 * 1000,
 };
 
-export const API_TIMEOUT = 5000;
+export const API_TIMEOUT = 7000;
 
 const _QUIZ_DIRS = {
   get ROOT() { return `${FileSystem.documentDirectory || ''}Quizzes/`; },
