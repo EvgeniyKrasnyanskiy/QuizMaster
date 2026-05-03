@@ -42,6 +42,7 @@ const _GITHUB_CONFIG = {
   get REPO() { return GITHUB_REPO || ''; },
   get REGISTRY_PATH() { return 'registry.json'; },
   get CLOUD_TESTS_DIR() { return 'tests'; },
+  get DEFAULT_REPO_NAME() { return 'quiz-app-data'; },
   get disabled() { return false; },
   get API_BASE() {
     return `https://api.github.com/repos/${this.OWNER || ''}/${this.REPO || ''}/contents`;

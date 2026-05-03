@@ -49,12 +49,17 @@ export default function TeachersScreen({
     }
 
     let username = input;
-    let repoName = GITHUB_CONFIG.REPO;
+    let repoName = GITHUB_CONFIG.DEFAULT_REPO_NAME;
 
     if (input.includes('/')) {
       const parts = input.split('/');
       username = parts[0].trim();
-      repoName = parts[1].trim();
+      repoName = parts[1].trim() || GITHUB_CONFIG.DEFAULT_REPO_NAME;
+    }
+
+    if (!username) {
+      Alert.alert("Ошибка", "Некорректное имя пользователя.");
+      return;
     }
 
     if (subscriptions.some(s => s.owner.toLowerCase() === username.toLowerCase() && s.repo.toLowerCase() === repoName.toLowerCase())) {
@@ -64,8 +69,9 @@ export default function TeachersScreen({
 
     setLoading(true);
     try {
-      // Проверяем существование репозитория анонимно
       const url = `https://api.github.com/repos/${username}/${repoName}`;
+      console.log(`[Subscription] Probing URL: ${url}`);
+      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
       
@@ -173,7 +179,7 @@ export default function TeachersScreen({
           <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceHigh, borderRadius: 12, paddingRight: 8 }}>
             <TextInput
               style={[styles.input, { flex: 1, marginBottom: 0, borderWidth: 0, backgroundColor: 'transparent' }]}
-              placeholder="GitHub Username"
+              placeholder="Username или Username/Repo"
               placeholderTextColor={C.textDisabled}
               value={newTeacher}
               onChangeText={setNewTeacher}
