@@ -36,7 +36,8 @@ export default function TeacherProfileScreen({
   teacherProfile,
   setTeacherProfile,
   onBack,
-  title
+  title,
+  loadConfig
 }) {
   console.log('Profile Rendering', { hasProfile: !!teacherProfile });
 
@@ -47,6 +48,7 @@ export default function TeacherProfileScreen({
     repo: teacherProfile?.repo || '',
     token: teacherProfile?.token || ''
   });
+  const [isEditing, setIsEditing] = useState(!teacherProfile);
 
   const isConnected = !!teacherProfile;
 
@@ -97,7 +99,17 @@ export default function TeacherProfileScreen({
 
     setLoading(true);
     try {
-      // 1. Проверяем сам репозиторий
+      // 1. Сохраняем профиль (токен и данные)
+      const profileData = { owner, repo, token };
+      await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profileData));
+      
+      // 2. Обновляем глобальный стейт и дожидаемся обновления конфига
+      setTeacherProfile(profileData);
+      if (loadConfig) {
+        await loadConfig();
+      }
+
+      // 3. Теперь проверяем сам репозиторий, используя уже сохраненные данные
       const url = `https://api.github.com/repos/${owner}/${repo}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
@@ -142,10 +154,8 @@ export default function TeacherProfileScreen({
           // Но мы всё равно можем сохранить, если репозиторий существует
         }
 
-        const profileData = { owner, repo, token };
-        await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profileData));
-        setTeacherProfile(profileData);
         Alert.alert("Успех", "Соединение установлено и проверено.");
+        setIsEditing(false); // Закрываем режим редактирования после успеха
       } else if (response.status === 404) {
         Alert.alert("Ошибка", "Репозиторий не найден. Проверьте правильность Username и Repo.");
       } else if (response.status === 401) {
@@ -207,67 +217,110 @@ export default function TeacherProfileScreen({
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 10 }}>
-        <Card style={{ padding: 20, marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <Ionicons name="settings-outline" size={24} color={C.accent} style={{ marginRight: 10 }} />
-            <Text style={styles.cardTitle}>Настройки GitHub</Text>
-          </View>
+        {isConnected && !isEditing ? (
+          <Card style={{ padding: 20, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: C.success }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ backgroundColor: 'rgba(76, 175, 80, 0.1)', padding: 8, borderRadius: 10, marginRight: 12 }}>
+                  <Ionicons name="person-circle-outline" size={24} color={C.success} />
+                </View>
+                <View>
+                  <Text style={{ color: C.textSecondary, fontSize: 12 }}>Активный профиль</Text>
+                  <Text style={[styles.cardTitle, { fontSize: 18 }]}>{teacherProfile.owner}</Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setIsEditing(true)}
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: 8, borderRadius: 8 }}
+              >
+                <Ionicons name="create-outline" size={20} color={C.accent} />
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.label}>GitHub Username</Text>
-          <TextInput
-            style={[styles.input, isConnected && { backgroundColor: 'rgba(255,255,255,0.03)', color: C.textDisabled }]}
-            value={tempProfile.owner}
-            onChangeText={(val) => setTempProfile(prev => ({ ...prev, owner: val }))}
-            placeholder="Например: john_doe"
-            placeholderTextColor={C.textDisabled}
-            autoCapitalize="none"
-            editable={!isConnected}
-          />
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 12, marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Ionicons name="folder-outline" size={14} color={C.textDisabled} style={{ marginRight: 6 }} />
+                <Text style={{ color: C.textDisabled, fontSize: 12 }}>Репозиторий:</Text>
+              </View>
+              <Text style={{ color: C.white, fontWeight: '600' }}>{teacherProfile.repo}</Text>
+            </View>
 
-          <Text style={styles.label}>Название репозитория</Text>
-          <TextInput
-            style={[styles.input, isConnected && { backgroundColor: 'rgba(255,255,255,0.03)', color: C.textDisabled }]}
-            value={tempProfile.repo}
-            onChangeText={(val) => setTempProfile(prev => ({ ...prev, repo: val }))}
-            placeholder="Например: quiz-app-data"
-            placeholderTextColor={C.textDisabled}
-            autoCapitalize="none"
-            editable={!isConnected}
-          />
-
-          <Text style={styles.label}>GitHub Personal Token</Text>
-          <TextInput
-            style={[styles.input, isConnected && { backgroundColor: 'rgba(255,255,255,0.03)', color: C.textDisabled }]}
-            value={tempProfile.token}
-            onChangeText={(val) => setTempProfile(prev => ({ ...prev, token: val }))}
-            placeholder="ghp_..."
-            placeholderTextColor={C.textDisabled}
-            secureTextEntry
-            autoCapitalize="none"
-            editable={!isConnected}
-          />
-
-          <Btn
-            label={isConnected ? "Проверить соединение" : "Сохранить и проверить"}
-            onPress={validateAndSaveProfile}
-            loading={loading}
-            style={{ marginTop: 20, backgroundColor: isConnected ? C.success : C.accent }}
-          />
-
-          {isConnected && (
             <Btn
-              label="Сбросить настройки"
-              onPress={handleReset}
+              label="Проверить соединение"
+              onPress={validateAndSaveProfile}
+              loading={loading}
               variant="black"
-              style={{ marginTop: 12, borderColor: C.danger, borderWidth: 1 }}
-              textStyle={{ color: C.white }}
+              style={{ borderColor: C.success, borderWidth: 1 }}
+              textStyle={{ color: C.success }}
             />
-          )}
+          </Card>
+        ) : (
+          <Card style={{ padding: 20, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="settings-outline" size={24} color={C.accent} style={{ marginRight: 10 }} />
+                <Text style={styles.cardTitle}>Настройки GitHub</Text>
+              </View>
+              {isConnected && (
+                <TouchableOpacity onPress={() => setIsEditing(false)}>
+                  <Text style={{ color: C.textSecondary, fontWeight: '600' }}>Отмена</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
-          <Text style={[styles.cardDesc, { marginTop: 16, fontSize: 12, opacity: 0.7 }]}>
-            Настройки будут проверены через GitHub API перед сохранением. Токен используется только для работы с вашим репозиторием.
-          </Text>
-        </Card>
+            <Text style={styles.label}>GitHub Username</Text>
+            <TextInput
+              style={styles.input}
+              value={tempProfile.owner}
+              onChangeText={(val) => setTempProfile(prev => ({ ...prev, owner: val }))}
+              placeholder="Например: john_doe"
+              placeholderTextColor={C.textDisabled}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.label}>Название репозитория</Text>
+            <TextInput
+              style={styles.input}
+              value={tempProfile.repo}
+              onChangeText={(val) => setTempProfile(prev => ({ ...prev, repo: val }))}
+              placeholder="Например: quiz-app-data"
+              placeholderTextColor={C.textDisabled}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.label}>GitHub Personal Token</Text>
+            <TextInput
+              style={styles.input}
+              value={tempProfile.token}
+              onChangeText={(val) => setTempProfile(prev => ({ ...prev, token: val }))}
+              placeholder="ghp_..."
+              placeholderTextColor={C.textDisabled}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            <Btn
+              label="Сохранить и проверить"
+              onPress={validateAndSaveProfile}
+              loading={loading}
+              style={{ marginTop: 20, backgroundColor: C.accent }}
+            />
+
+            {isConnected && (
+              <Btn
+                label="Сбросить настройки"
+                onPress={handleReset}
+                variant="black"
+                style={{ marginTop: 12, borderColor: C.danger, borderWidth: 1 }}
+                textStyle={{ color: C.white }}
+              />
+            )}
+
+            <Text style={[styles.cardDesc, { marginTop: 16, fontSize: 12, opacity: 0.7 }]}>
+              Настройки будут проверены через GitHub API перед сохранением. Токен используется только для работы с вашим репозиторием.
+            </Text>
+          </Card>
+        )}
 
         <Card style={{ padding: 20, borderStyle: 'dashed', backgroundColor: 'transparent', borderWidth: 1, borderColor: C.border }}>
           <Text style={[styles.welcomeDesc, { textAlign: 'center', fontSize: 13 }]}>

@@ -1274,6 +1274,25 @@ export default function App() {
     return allFiles;
   };
 
+  const handleTeacherLogout = async () => {
+    Alert.alert(
+      "Выйти из профиля?",
+      "Ваши данные авторизации будут удалены с устройства.",
+      [
+        { text: "Отмена", style: "cancel" },
+        { 
+          text: "Выйти", 
+          style: "destructive", 
+          onPress: async () => {
+            await AsyncStorage.removeItem(CACHE_KEYS.TEACHER_PROFILE);
+            setTeacherProfile(null);
+            if (loadConfig) loadConfig();
+          } 
+        }
+      ]
+    );
+  };
+
   const refreshTeacherLibrary = async () => {
     // В режиме учителя показываем свои тесты и тесты из папки загрузок
     const ownFiles = await listDatFiles(SafeDirs.TEACHER);
@@ -2171,6 +2190,30 @@ export default function App() {
     }
   };
 
+  const getGroupedCloudRegistry = () => {
+    if (!cloudRegistry) return [];
+    const myTests = [];
+    const subscriptionTests = [];
+
+    cloudRegistry.forEach(item => {
+      const isMine = teacherProfile && item.authorId === teacherProfile.owner;
+      if (isMine) {
+        myTests.push(item);
+      } else {
+        subscriptionTests.push(item);
+      }
+    });
+
+    const sections = [];
+    if (myTests.length > 0) {
+      sections.push({ title: 'Мои тесты', data: myTests });
+    }
+    if (subscriptionTests.length > 0) {
+      sections.push({ title: 'Тесты подписок', data: subscriptionTests });
+    }
+    return sections;
+  };
+
   const getGroupedQuizzes = () => {
     // Группируем локальные файлы по авторам на основе префиксов
     const groups = {};
@@ -2382,7 +2425,7 @@ export default function App() {
                 <TouchableOpacity
                   onPress={() => setScreen('teacher-profile')}
                   style={{
-                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    backgroundColor: teacherProfile ? 'rgba(91, 139, 245, 0.1)' : 'rgba(255,255,255,0.1)',
                     paddingHorizontal: 12,
                     height: 34,
                     borderRadius: 8,
@@ -2390,11 +2433,32 @@ export default function App() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1,
-                    borderColor: C.border
+                    borderColor: teacherProfile ? C.accent : C.border
                   }}
                 >
-                  <Text style={{ color: C.accent, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>NEW</Text>
+                  <Text style={{ color: teacherProfile ? C.accent : C.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
+                    {teacherProfile ? "МОЙ ПРОФИЛЬ" : "СОЗДАТЬ ПРОФИЛЬ"}
+                  </Text>
                 </TouchableOpacity>
+
+                {teacherProfile && (
+                  <TouchableOpacity
+                    onPress={handleTeacherLogout}
+                    style={{
+                      backgroundColor: 'rgba(255, 77, 77, 0.1)',
+                      paddingHorizontal: 10,
+                      height: 34,
+                      borderRadius: 8,
+                      marginRight: 8,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 77, 77, 0.3)'
+                    }}
+                  >
+                    <Ionicons name="log-out-outline" size={16} color="#ff4d4d" />
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   style={styles.helpBtn}
@@ -2456,6 +2520,7 @@ export default function App() {
           <TeacherProfileScreen
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
+            loadConfig={loadConfig}
             onBack={() => setScreen('teacher')}
           />
         );
@@ -2467,6 +2532,7 @@ export default function App() {
             title="Новый профиль"
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
+            loadConfig={loadConfig}
             onBack={() => setScreen('teacher')}
           />
         );
@@ -3056,38 +3122,75 @@ export default function App() {
               <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
                 Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
               </Text>
-              <FlatList
-                data={cloudRegistry}
+              <SectionList
+                sections={getGroupedCloudRegistry()}
                 keyExtractor={(item) => item.id}
+                stickySectionHeadersEnabled={false}
                 ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
+                renderSectionHeader={({ section: { title } }) => (
+                  <View style={{ backgroundColor: C.bg, paddingVertical: 10, marginTop: 16 }}>
+                    <Text style={{ color: C.accent, fontWeight: '800', fontSize: 16, letterSpacing: 1 }}>{title.toUpperCase()}</Text>
+                  </View>
+                )}
                 renderItem={({ item }) => {
                   if (!item || !item.id || !item.title) return null;
+                  
+                  const isMine = teacherProfile && item.authorId === teacherProfile.owner;
+                  const isDownloaded = studentLibraryFiles.some(f => 
+                    f.authorId === item.authorId && stripDatExtension(f.displayName) === stripDatExtension(item.fileName)
+                  );
+
                   return (
                     <View style={styles.libraryRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.libraryTitle}>{item.title}</Text>
-                        <Text style={styles.libraryMeta}>
-                          ID: {item.id} | Вопросов: {item.qCount}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                          <View style={{ backgroundColor: 'rgba(91, 139, 245, 0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 }}>
+                            <Text style={{ color: C.accent, fontSize: 10, fontWeight: '700' }}>👤 {item.authorName}</Text>
+                          </View>
+                          <Text style={styles.libraryMeta}>
+                            ID: {item.id} | Вопросов: {item.qCount}
+                          </Text>
+                        </View>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleOpenCloudFileEditor(item)}
-                        style={[styles.fileActionBtn, { marginRight: 8 }]}
-                      >
-                        <Ionicons name="create-outline" size={24} color={C.accent} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
-                        style={[styles.deleteBtn, { opacity: loading ? 0.5 : 1 }]}
-                        disabled={!!loading}
-                        accessibilityState={{ disabled: !!loading }}
-                      >
-                        {loading ? (
-                          <ActivityIndicator size="small" color="#fff" />
+                      
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isDownloaded ? (
+                          <View style={[styles.fileActionBtn, { borderColor: C.success, borderWidth: 1, backgroundColor: 'transparent' }]}>
+                            <Ionicons name="cloud-done-outline" size={20} color={C.success} />
+                          </View>
                         ) : (
-                          <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
+                          <TouchableOpacity
+                            onPress={() => checkForUpdates(true)} // В этой версии checkForUpdates скачивает всё новое
+                            style={[styles.fileActionBtn, { borderColor: C.accent }]}
+                          >
+                            <Ionicons name="cloud-download-outline" size={20} color={C.accent} />
+                          </TouchableOpacity>
                         )}
-                      </TouchableOpacity>
+
+                        {isMine && (
+                          <TouchableOpacity
+                            onPress={() => handleOpenCloudFileEditor(item)}
+                            style={[styles.fileActionBtn, { marginLeft: 8 }]}
+                          >
+                            <Ionicons name="create-outline" size={20} color={C.accent} />
+                          </TouchableOpacity>
+                        )}
+
+                        {isMine && (
+                          <TouchableOpacity
+                            onPress={() => handleUnpublishFromCloud({ name: item.fileName })}
+                            style={[styles.deleteBtn, { marginLeft: 8, opacity: loading ? 0.5 : 1 }]}
+                            disabled={!!loading}
+                          >
+                            {loading ? (
+                              <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                              <Ionicons name="trash-outline" size={20} color="#fff" />
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   );
                 }}
