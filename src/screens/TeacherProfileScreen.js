@@ -33,25 +33,45 @@ const ConfigItem = ({ label, value, editable, onChange, multiline, style, placeh
   </View>
 );
 
-const Btn = ({ label, onPress, variant = 'primary', loading = false, style, textStyle }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    disabled={!!loading}
-    accessibilityState={{ disabled: !!loading }}
-    style={[
-      styles.btn,
-      variant === 'black' && { backgroundColor: '#111' },
-      variant === 'gold' && { backgroundColor: '#FFD700', borderColor: '#FFA700', borderWidth: 1 },
-      style
-    ]}
-  >
-    {loading ? (
-      <ActivityIndicator color={variant === 'gold' ? '#111' : "#fff"} />
-    ) : (
-      <Text style={[styles.btnText, variant === 'gold' && { color: '#111', fontWeight: '800' }, textStyle]}>{label}</Text>
-    )}
-  </TouchableOpacity>
-);
+const Btn = ({ label, onPress, variant = 'primary', loading = false, style, textStyle, children }) => {
+  const bgColor =
+    variant === 'success' ? C.success :
+      variant === 'danger' ? C.danger :
+        variant === 'black' ? '#111' :
+          variant === 'gold' ? '#FFD700' :
+            variant === 'ghost' ? 'transparent' : C.accent;
+
+  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : (variant === 'ghost' ? C.accent : 'transparent'));
+  const borderWidth = (variant === 'gold' || variant === 'primary' || variant === 'ghost') ? 1 : 0;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={!!loading}
+      accessibilityState={{ disabled: !!loading }}
+      style={[
+        styles.btn,
+        { backgroundColor: bgColor, borderColor, borderWidth },
+        style
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={variant === 'gold' ? '#111' : "#fff"} />
+      ) : (
+        children || (
+          <Text style={[
+            styles.btnText,
+            { color: (variant === 'gold' || variant === 'ghost') ? (variant === 'gold' ? '#111' : C.accent) : '#fff' },
+            variant === 'gold' && { fontWeight: '800' },
+            textStyle
+          ]}>
+            {label}
+          </Text>
+        )
+      )}
+    </TouchableOpacity>
+  );
+};
 
 export default function TeacherProfileScreen({
   teacherProfile,
@@ -425,8 +445,6 @@ export default function TeacherProfileScreen({
                 <Btn
                   label="Обновить из облака"
                   variant="ghost"
-                  style={{ borderColor: C.accent, borderWidth: 1 }}
-                  textStyle={{ color: C.accent }}
                   onPress={() => loadConfig()}
                 />
                 <Btn

@@ -13,24 +13,36 @@ const Card = ({ children, style }) => (
   <View style={[styles.card, style]}>{children}</View>
 );
 
-const Btn = ({ label, onPress, variant = 'primary', loading = false, style, children }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    disabled={!!loading}
-    accessibilityState={{ disabled: !!loading }}
-    style={[
-      styles.btn,
-      variant === 'black' && { backgroundColor: '#111' },
-      style
-    ]}
-  >
-    {loading ? (
-      <ActivityIndicator color="#fff" />
-    ) : (
-      children || <Text style={styles.btnText}>{label}</Text>
-    )}
-  </TouchableOpacity>
-);
+const Btn = ({ label, onPress, variant = 'primary', loading = false, style, children, textStyle }) => {
+  const bgColor =
+    variant === 'success' ? C.success :
+      variant === 'danger' ? C.danger :
+        variant === 'black' ? '#111' :
+          variant === 'gold' ? '#FFD700' :
+            variant === 'ghost' ? 'transparent' : C.accent;
+
+  const borderColor = variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : 'transparent');
+  const borderWidth = (variant === 'gold' || variant === 'primary') ? 1 : 0;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={!!loading}
+      accessibilityState={{ disabled: !!loading }}
+      style={[
+        styles.btn,
+        { backgroundColor: bgColor, borderColor, borderWidth },
+        style
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={variant === 'gold' ? '#111' : "#fff"} />
+      ) : (
+        children || <Text style={[styles.btnText, { color: variant === 'gold' ? '#111' : '#fff' }, textStyle]}>{label}</Text>
+      )}
+    </TouchableOpacity>
+  );
+};
 
 export default function TeachersScreen({
   subscriptions,
@@ -212,7 +224,7 @@ export default function TeachersScreen({
               onPress={addTeacher}
               disabled={!!loading}
               accessibilityState={{ disabled: !!loading }}
-              style={{ width: 44, height: 44, backgroundColor: C.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: 44, height: 44, backgroundColor: C.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#4A80F0' }}
             >
               {loading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="person-add-outline" size={20} color="#fff" />}
             </TouchableOpacity>

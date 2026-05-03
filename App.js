@@ -145,7 +145,7 @@ const buildDatNameWithTimestamp = (baseName) => {
 // ─────────────────────────────────────────────
 // REUSABLE: Button
 // ─────────────────────────────────────────────
-const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }) => {
+const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle, children }) => {
   const bgColor =
     disabled ? C.border :
       variant === 'primary' ? C.accent :
@@ -155,8 +155,8 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
               variant === 'black' ? '#111' :
                 variant === 'gold' ? '#FFD700' : C.surfaceHigh;
 
-  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : (variant === 'gold' ? '#FFA700' : 'transparent'));
-  const borderWidth = (variant === 'ghost' || variant === 'black' || variant === 'gold') ? 1 : 0;
+  const borderColor = variant === 'ghost' ? C.border : (variant === 'black' ? C.danger : (variant === 'gold' ? '#FFA700' : (variant === 'primary' ? '#4A80F0' : 'transparent')));
+  const borderWidth = (variant === 'ghost' || variant === 'black' || variant === 'gold' || variant === 'primary') ? 1 : 0;
 
   return (
     <TouchableOpacity
@@ -170,9 +170,11 @@ const Btn = ({ label, onPress, disabled, variant = 'primary', style, textStyle }
         style,
       ]}
     >
-      <Text style={[styles.btnText, { color: disabled ? C.textDisabled : (variant === 'gold' ? '#111' : C.white) }, textStyle]}>
-        {label}
-      </Text>
+      {children || (
+        <Text style={[styles.btnText, { color: disabled ? C.textDisabled : (variant === 'gold' ? '#111' : C.white) }, textStyle]}>
+          {label}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 };
@@ -3018,7 +3020,7 @@ export default function App() {
               <Btn
                 label="Добавить тесты"
                 onPress={() => { setScreen('add-test'); }}
-                style={{ marginTop: 16, backgroundColor: C.accent, borderColor: C.accent, borderWidth: 1 }}
+                style={{ marginTop: 16 }}
               />
             </View>
           </View>
@@ -3204,7 +3206,6 @@ export default function App() {
                       label="🌐 Загрузить по ссылке"
                       onPress={handleLoadByUrl}
                       disabled={!fileUrl || fileUrl.trim().length < 10}
-                      style={{ backgroundColor: C.accent }}
                     />
                   </>
                 )}
@@ -3330,12 +3331,12 @@ export default function App() {
             <View style={styles.resultsActions}>
 
 
-              <TouchableOpacity onPress={handleShareResultStatus} style={[styles.btn, { backgroundColor: C.accent, marginBottom: 12 }]}>
+              <Btn onPress={handleShareResultStatus} style={{ marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Ionicons name="share-social" size={20} color="#fff" style={{ marginRight: 8 }} />
                   <Text style={{ color: '#fff', fontWeight: '700' }}>Поделиться результатом</Text>
                 </View>
-              </TouchableOpacity>
+              </Btn>
 
               <Btn
                 label="К списку тестов"
@@ -3398,7 +3399,6 @@ export default function App() {
                     label="🔗 Загрузить по ссылке"
                     onPress={() => handleUrlImport(fileUrl)}
                     disabled={!fileUrl.trim()}
-                    style={{ backgroundColor: C.accent }}
                   />
                 </View>
               </View>
