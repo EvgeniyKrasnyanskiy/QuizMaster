@@ -1107,10 +1107,12 @@ export default function App() {
       const subId = `master-public-${registry.id || 'reg'}`;
       
       setSubscriptions(prev => {
-        const base = (prev || []).filter(s => s && (s.owner || s.username));
-        const hasMaster = base.some(s => s.owner === masterOwner || s.id === subId);
+        const base = (prev || []).filter(s => s && (s.owner || s.username || s.name));
         
-        const nextSubs = hasMaster ? [...base] : [...base, {
+        // Удаляем любые дубликаты мастера перед добавлением нового
+        const filtered = base.filter(s => s.owner !== masterOwner && s.id !== subId);
+        
+        const nextSubs = [...filtered, {
           id: subId,
           name: authorName,
           owner: masterOwner,
@@ -1120,6 +1122,7 @@ export default function App() {
 
         const seen = new Set();
         return nextSubs.filter(s => {
+          if (!s) return false;
           const key = (s.owner || s.username || s.name || '').toLowerCase();
           if (!key || seen.has(key)) return false;
           seen.add(key);
@@ -1141,7 +1144,15 @@ export default function App() {
           const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
           
           console.log(`[MasterSync] Raw fetched (50 chars): ${rawContent.substring(0, 50)}`);
-          const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
+          
+          // Нормализация HEX: удаляем лишние 00 байты (UTF-16 HEX -> standard HEX)
+          let normalizedContent = rawContent.trim();
+          if (/^(00[0-9a-fA-F]{2})+$/.test(normalizedContent)) {
+            normalizedContent = normalizedContent.replace(/00([0-9a-fA-F]{2})/g, '$1');
+            console.log(`[MasterSync] Normalized HEX (50 chars): ${normalizedContent.substring(0, 50)}`);
+          }
+          
+          const decrypted = decodeEncryptedPayload(normalizedContent, effectiveSalt);
           console.log(`[MasterSync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
           
           const { questions } = parseQuestions(decrypted);
