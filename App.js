@@ -1031,11 +1031,11 @@ export default function App() {
     const sortedKeys = Object.keys(configData).sort();
 
     return (
-      <Card style={{ padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 12 }}>
-        <Text style={{ fontSize: 12, fontWeight: '700', color: C.accent, marginBottom: 8 }}>{title}</Text>
+      <Card style={{ padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' }}>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: C.accent, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>{title}</Text>
         {sortedKeys.map(key => (
-          <Text key={key} style={{ fontSize: 11, color: C.textSecondary, marginBottom: 4 }}>
-            {key}: <Text style={{ color: C.textPrimary }}>{JSON.stringify(configData[key])}</Text>
+          <Text key={key} style={{ fontSize: 10, color: C.textSecondary, marginBottom: 2 }}>
+            {key}: <Text style={{ color: C.textPrimary, fontWeight: '500' }}>{JSON.stringify(configData[key])}</Text>
           </Text>
         ))}
       </Card>
@@ -1354,10 +1354,15 @@ export default function App() {
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS, { isStudent: true });
     const files = [...studentFiles, ...downloadedFiles];
     
+    // Загружаем список просмотренных тестов
+    const seenRaw = await AsyncStorage.getItem(CACHE_KEYS.SEEN_TESTS);
+    const seen = seenRaw ? JSON.parse(seenRaw) : [];
+
     // Получаем статусы для всех файлов перед сортировкой
     const fileDataEntries = await Promise.all(files.map(async (file) => {
       const statusKey = buildQuizStatusKey(file.displayName, file.authorId);
       const progressKey = buildQuizProgressKey(file.displayName, file.authorId);
+      const testId = file.authorId ? `${file.authorId}_${stripDatExtension(file.displayName)}` : stripDatExtension(file.displayName);
 
       const statusRaw = await AsyncStorage.getItem(statusKey);
       const progressRaw = await AsyncStorage.getItem(progressKey);
@@ -1368,30 +1373,39 @@ export default function App() {
         try { status = JSON.parse(statusRaw); } catch { status = null; }
       }
       
+      const isSeen = seen.includes(testId);
+      const results = status?.results || [];
+      const score = results.filter(r => r.correct).length;
+      const isCompleted = !!(status?.completedAt || results.length > 0);
+
       const statusObj = {
         ...(status || {}),
         hasProgress: Boolean(progressRaw),
         isLocked,
         authorId: file.authorId,
-        canEdit: file.canEdit
+        canEdit: file.canEdit,
+        score,
+        isCompleted,
+        isSeen
       };
 
-      return { file, status: statusObj };
+      return { file, status: statusObj, testId };
     }));
 
     // Умная сортировка
     const sortedData = fileDataEntries.sort((a, b) => {
-      const scoreA = (a.status && a.status.score !== undefined) ? a.status.score : null;
-      const scoreB = (b.status && b.status.score !== undefined) ? b.status.score : null;
-      
-      const isPlayedA = scoreA !== null && scoreA > 0;
-      const isPlayedB = scoreB !== null && scoreB > 0;
+      // Приоритет 1: Новые/непросмотренные (isSeen === false)
+      if (!a.status.isSeen && b.status.isSeen) return -1;
+      if (a.status.isSeen && !b.status.isSeen) return 1;
 
-      // 1. Непройденные (null или 0) выше пройденных
-      if (!isPlayedA && isPlayedB) return -1;
-      if (isPlayedA && !isPlayedB) return 1;
+      // Приоритет 2: Непройденные или с нулевым результатом
+      const needsCompletionA = !a.status.isCompleted || a.status.score === 0;
+      const needsCompletionB = !b.status.isCompleted || b.status.score === 0;
 
-      // 2. Внутри групп - по времени (новые сверху)
+      if (needsCompletionA && !needsCompletionB) return -1;
+      if (!needsCompletionA && needsCompletionB) return 1;
+
+      // Приоритет 3: По времени (новые сверху)
       return b.file.mtime - a.file.mtime;
     });
 
@@ -2276,6 +2290,11 @@ export default function App() {
     );
   };
 
+  const handleResetSyncCooldowns = () => {
+    setLastSyncTime(0);
+    Alert.alert("Готово", "Таймер синхронизации сброшен. Облако обновится при следующем входе в библиотеку.");
+  };
+
   const buildReportText = () => {
     return buildCleanReportText({
       title: config.title,
@@ -2543,43 +2562,93 @@ export default function App() {
               </View>
             )}
 
-            {/* Конфиг блок растягивается на весь экран */}
-            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 10 }}>
-              <Text style={[styles.cardTitle, { fontSize: 14, color: C.textDisabled, marginBottom: 10 }]}>
-                ⚙️ Системная информация и конфиг
-              </Text>
-
+            <View style={{ flex: 1, paddingHorizontal: 16 }}>
               <ScrollView style={{ flex: 1 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                {renderConfigSection("🌐 Удаленный конфиг (GitHub)", remoteConfigSnapshot)}
-                {renderConfigSection("💾 Локальный конфиг (Cache)", localConfig)}
-                {renderConfigSection("⚙️ Системная информация", {
-                  version: APP_VERSION,
-                  endpoints: API_ENDPOINTS,
-                  cooldown: COOLDOWN_SETTINGS,
-                  metadata: APP_METADATA
-                })}
+                {/* 1. Quick Start Block */}
+                <Card style={{ padding: 16, backgroundColor: 'rgba(91, 139, 245, 0.05)', marginTop: 10, borderLeftWidth: 3, borderLeftColor: C.accent }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent, marginBottom: 8 }}>🚀 Быстрый старт</Text>
+                  <Text style={{ fontSize: 12, color: C.textPrimary, lineHeight: 18 }}>
+                    • Создавайте тесты в редакторе или импортируйте CSV.{"\n"}
+                    • Используйте репозиторий <Text style={{ fontWeight: '700' }}>quiz-app-data</Text> для хранения.{"\n"}
+                    • Шифрование выполняется автоматически при сохранении.{"\n"}
+                    • <Text style={{ color: C.textSecondary, fontSize: 11 }}>Листайте вниз для доступа к Dev Tools.</Text>
+                  </Text>
+                </Card>
 
-                <Card style={{ padding: 12, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 12 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 8 }}>🛠 Инструменты разработчика</Text>
-                  <Btn label="Сбросить все блокировки" onPress={handleResetCooldowns} variant="black" style={{ height: 40 }} />
+                {/* 2. Configuration Block */}
+                <View style={{ marginTop: 20 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDisabled, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    ⚙️ Конфигурация
+                  </Text>
+                  {renderConfigSection("Локальные директории (DIRS)", {
+                    ROOT: SafeDirs.ROOT,
+                    STUDENT: SafeDirs.STUDENT,
+                    TEACHER: SafeDirs.TEACHER,
+                    DOWNLOADS: SafeDirs.DOWNLOADS
+                  })}
+                  {renderConfigSection("Статус GitHub", {
+                    Owner: GITHUB_CONFIG.OWNER || 'не задан',
+                    Repo: GITHUB_CONFIG.REPO || 'не задан',
+                    Token: GITHUB_CONFIG.TOKEN ? '✅ Установлен (env)' : (teacherProfile?.token ? '✅ Установлен (профиль)' : '❌ Отсутствует'),
+                    Connected: !!(GITHUB_CONFIG.OWNER && GITHUB_CONFIG.REPO)
+                  })}
+                </View>
+
+                {/* 3. System Info Block */}
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDisabled, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    📱 Системная информация
+                  </Text>
+                  <Card style={{ padding: 12, backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <Text style={{ fontSize: 11, color: C.textSecondary }}>Версия приложения</Text>
+                      <Text style={{ fontSize: 11, color: C.textPrimary, fontWeight: '700' }}>v{APP_VERSION}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <Text style={{ fontSize: 11, color: C.textSecondary }}>GitHub API</Text>
+                      <Text style={{ fontSize: 10, color: C.accent }}>{GITHUB_CONFIG.API_BASE?.substring(0, 30)}...</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 11, color: C.textSecondary }}>Кулдаун тестов</Text>
+                      <Text style={{ fontSize: 11, color: C.textPrimary }}>{(config.TEST_COOLDOWN_MS / 3600000).toFixed(1)}ч</Text>
+                    </View>
+                  </Card>
+                </View>
+
+                {/* 4. Developer Tools */}
+                <Card style={{ padding: 12, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 24, marginBottom: 20 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 12 }}>🛠 Инструменты разработчика</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <Btn 
+                      label="Сброс блокировок" 
+                      onPress={handleResetCooldowns} 
+                      variant="black" 
+                      style={{ flex: 1, height: 38, paddingVertical: 0 }} 
+                    />
+                    <Btn 
+                      label="Сброс Sync" 
+                      onPress={handleResetSyncCooldowns} 
+                      variant="black" 
+                      style={{ flex: 1, height: 38, paddingVertical: 0 }} 
+                    />
+                  </View>
                 </Card>
               </ScrollView>
             </View>
 
-            {/* Кнопка в самом низу */}
+            {/* Footer */}
             <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg }}>
               <Btn
-                label="📁 Управление тестами"
+                label="📁 УПРАВЛЕНИЕ ТЕСТАМИ"
                 onPress={async () => {
                   await refreshTeacherLibrary();
                   setResultsOrigin('teacher');
                   setScreen('teacher-library');
                 }}
-                style={{ height: 60, backgroundColor: '#FFA700' }}
+                style={{ height: 54, backgroundColor: '#FFA700' }}
               />
-
-              <Text style={[styles.cardDesc, { textAlign: 'center', marginTop: 8, fontSize: 12 }]}>
-                Создание и редактирование ваших тестов
+              <Text style={{ textAlign: 'center', marginTop: 8, fontSize: 10, color: C.textDisabled, fontWeight: '600', letterSpacing: 0.5 }}>
+                СОЗДАНИЕ, РЕДАКТИРОВАНИЕ И ПУБЛИКАЦИЯ В ОБЛАКО
               </Text>
             </View>
           </View>
