@@ -480,10 +480,10 @@ export default function App() {
     const activeOwner = customCreds?.owner || teacherProfile?.owner || GITHUB_CONFIG.OWNER;
     const activeRepo = customCreds?.repo || teacherProfile?.repo || GITHUB_CONFIG.REPO;
 
-    const isMasterSource = activeOwner === 'EvgeniyKrasnyanskiy';
+    const isMasterSource = activeOwner === 'EvgeniyKrasnyanskiy' || customCreds?.isMaster;
     
     if (method === 'GET' && isMasterSource) {
-      console.log(`[GitHubAPI] Public access for ${activeOwner}/${activeRepo}`);
+      // Молчаливо продолжаем для публичного мастер-источника
     } else if (!activeToken || activeToken === 'ВАШ_GITHUB_TOKEN') {
       throw new Error('GitHub Token не настроен. Проверьте профиль или .env');
     }
@@ -533,7 +533,8 @@ export default function App() {
         const creds = {
           owner: sub.owner,
           repo: sub.repo,
-          token: sub.token || undefined // Students usually don't have tokens for others
+          token: sub.token || undefined, // Students usually don't have tokens for others
+          isMaster: sub.isMaster
         };
         const data = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
         if (data && data.content) {
@@ -545,7 +546,8 @@ export default function App() {
           const withAuthor = registry.map(item => ({
             ...item,
             authorId: sub.owner,
-            authorName: authorName
+            authorName: authorName,
+            isFromMaster: sub.isMaster
           }));
           merged = [...merged, ...withAuthor];
         }
@@ -757,6 +759,12 @@ export default function App() {
       }
 
       await refreshStudentLibrary();
+      
+      const masterItemsCount = registry.filter(item => item.isFromMaster).length;
+      if (masterItemsCount > 0) {
+        console.log(`[MasterSync] Successfully synced ${masterItemsCount} files from Master Source.`);
+      }
+
       if (downloadedCount > 0) {
         console.log(`Downloaded ${downloadedCount} new tests.`);
       }
