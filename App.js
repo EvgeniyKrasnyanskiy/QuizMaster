@@ -415,6 +415,52 @@ export default function App() {
     }
   };
 
+  const handlePublishConfigToCloud = async (configData) => {
+    if (!teacherProfile?.token) {
+      Alert.alert('Ошибка', 'GitHub Token не установлен в профиле.');
+      return false;
+    }
+    if (teacherProfile.owner !== 'EvgeniyKrasnyanskiy') {
+      Alert.alert('Ошибка', 'Только основной администратор может обновлять глобальный конфиг.');
+      return false;
+    }
+
+    try {
+      setLoading(true);
+      const fileName = 'quiz-config.json';
+      const path = fileName; // В корне репозитория
+      
+      // 1. Пытаемся получить существующий файл, чтобы взять его SHA
+      let sha = null;
+      try {
+        const existing = await githubRequest(path);
+        if (existing && existing.sha) sha = existing.sha;
+      } catch (e) {
+        // Файл может не существовать, это нормально для первой загрузки
+      }
+
+      // 2. Подготавливаем JSON
+      const content = JSON.stringify(configData, null, 2);
+      
+      // 3. Отправляем в GitHub (напрямую, так как это текстовый JSON)
+      const res = await githubRequest(path, 'PUT', {
+        message: `update: remote configuration [app-editor]`,
+        content: btoa(unescape(encodeURIComponent(content))),
+        sha: sha
+      });
+
+      if (res) {
+        Alert.alert('Успех', 'Конфигурация успешно опубликована в GitHub и будет доступна всем пользователям после обновления.');
+        return true;
+      }
+    } catch (e) {
+      Alert.alert('Ошибка публикации', e.message);
+    } finally {
+      setLoading(false);
+    }
+    return false;
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
@@ -2620,17 +2666,19 @@ export default function App() {
                     DOWNLOADS: SafeDirs.DOWNLOADS
                   })}
                   {renderConfigSection("Статус GitHub", {
-                    Owner: GITHUB_CONFIG.OWNER || 'не задан',
-                    Repo: GITHUB_CONFIG.REPO || 'не задан',
-                    Token: GITHUB_CONFIG.TOKEN ? '✅ Установлен (env)' : (teacherProfile?.token ? '✅ Установлен (профиль)' : '❌ Отсутствует'),
-                    Connected: !!(GITHUB_CONFIG.OWNER && GITHUB_CONFIG.REPO)
+                    Owner: teacherProfile?.owner || GITHUB_CONFIG.OWNER || 'не задан',
+                    Repo: teacherProfile?.repo || GITHUB_CONFIG.REPO || 'не задан',
+                    Token: (teacherProfile?.token || GITHUB_CONFIG.TOKEN) ? '✅ Установлен' : '❌ Отсутствует',
+                    Environment: GITHUB_CONFIG.TOKEN ? 'ENV' : 'Profile',
+                    Connected: !!(teacherProfile?.owner || GITHUB_CONFIG.OWNER)
                   })}
                   {renderConfigSection("Удаленная конфигурация (CLOUD)", {
                     Title: config.title,
+                    AdminCode: '••••',
                     ReportEmail: config.reportEmail || 'не задан',
-                    HostsCount: allowedQuizHosts.length,
                     Timeout: `${remoteFetchTimeoutMs}ms`,
-                    Cooldown: `${(config.TEST_COOLDOWN_MS / 3600000).toFixed(1)}ч`
+                    Cooldown: `${(config.TEST_COOLDOWN_MS / 3600000).toFixed(1)}ч`,
+                    MaxFileSize: `${Math.round(config.maxQuizFileBytes / 1024)}KB`
                   })}
                   <Btn 
                     label="Синхронизировать конфиг" 
@@ -2715,6 +2763,7 @@ export default function App() {
             config={config}
             updateConfig={updateConfig}
             loadConfig={loadConfig}
+            publishConfigToCloud={handlePublishConfigToCloud}
           />
         );
       }
@@ -2730,6 +2779,7 @@ export default function App() {
             config={config}
             updateConfig={updateConfig}
             loadConfig={loadConfig}
+            publishConfigToCloud={handlePublishConfigToCloud}
           />
         );
       }
