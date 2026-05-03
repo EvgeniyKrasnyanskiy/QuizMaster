@@ -472,7 +472,7 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>1. Создайте репозиторий</Text>
               <Text style={[styles.cardDesc, { marginBottom: 15 }]}>
-                Создайте публичный репозиторий на GitHub. Название <Text style={{ fontWeight: '700', color: C.white }}>quiz-app-data</Text> является стандартным, но вы можете использовать любое другое.
+                Создайте публичный репозиторий на GitHub. Любые изменения в нём (добавление/удаление .dat файлов) будут отслеживаться автоматически.
               </Text>
 
               <Text style={[styles.label, { color: C.accent }]}>2. Инициализируйте реестр</Text>
@@ -485,13 +485,13 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>3. Получите Токен доступа</Text>
               <Text style={[styles.cardDesc, { marginBottom: 15 }]}>
-                Перейдите в Settings → Developer settings → Personal access tokens → Tokens (classic).{"\n"}
-                Создайте новый токен с правами <Text style={{ fontWeight: '700', color: C.white }}>repo</Text>.
+                Перейдите в Settings → Developer settings → PAT (classic).{"\n"}
+                Создайте токен с правами <Text style={{ fontWeight: '700', color: C.white }}>repo</Text>.
               </Text>
 
               <Text style={[styles.label, { color: C.accent }]}>4. Подключитесь</Text>
               <Text style={[styles.cardDesc, { marginBottom: 20 }]}>
-                Введите ваш Username, название репозитория (по умолчанию 'quiz-app-data') и полученный токен в форму настроек. Нажмите "Сохранить и проверить".
+                Введите ваш Username, Repo и Токен. Публикация будет происходить в этот репозиторий, а ученики смогут подписаться на ваш Username.
               </Text>
 
               <Btn label="Понятно" onPress={() => setHelpVisible(false)} />

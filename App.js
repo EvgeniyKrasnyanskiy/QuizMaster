@@ -223,19 +223,19 @@ const HelpModal = ({ visible, onClose, type = 'student', config = {} }) => {
                   • <Text style={{ fontWeight: '700' }}>Профиль:</Text> Настройте GitHub-профиль для хранения ваших тестов. Вам понадобится: Username, Название репозитория (например, 'quizzes') и Personal Access Token (PAT).
                 </Text>
                 <Text style={styles.helpText}>
-                  <Ionicons name="key-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Token:</Text> Создайте токен в настройках GitHub {"(Developer Settings -> Tokens)"} с правами <Text style={{ fontWeight: '700' }}>repo</Text> (для приватных) или <Text style={{ fontWeight: '700' }}>public_repo</Text>.
+                  <Ionicons name="key-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Token:</Text> Создайте токен в настройках GitHub {"(Developer Settings -> Tokens)"} с правами <Text style={{ fontWeight: '700' }}>repo</Text>.
                 </Text>
                 <Text style={styles.helpText}>
-                  • <Text style={{ fontWeight: '700' }}>Облако (GitHub API):</Text> Система синхронизирует тесты через ваш репозиторий. Все изменения в реестре происходят автоматически.
+                  • <Text style={{ fontWeight: '700' }}>Облако (GitHub API):</Text> Система синхронизирует тесты через ваш репозиторий. Все изменения в нём отслеживаются автоматически.
                 </Text>
                 <Text style={styles.helpText}>
                   • <Text style={{ fontWeight: '700' }}>Имена файлов:</Text> Используйте только латиницу и цифры. Кириллица запрещена для стабильности ссылок в облаке.
                 </Text>
                 <Text style={styles.helpText}>
-                  • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка <Ionicons name="cloud-upload-outline" size={16} color="#FFD700" /> (желтая) загружает локальный тест в облако. Кнопка <Ionicons name="cloud-offline-outline" size={16} color={C.textSecondary} /> удаляет его из облака.
+                  • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Тесты загружаются в ваш личный репозиторий. Ученики смогут скачивать их, если подпишутся на ваш Username.
                 </Text>
                 <Text style={styles.helpText}>
-                  <Ionicons name="information-circle-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Подсказка:</Text> Желтая иконка — это upload {"(локальное -> облако)"}, синяя/темная — download/unpublish.
+                  <Ionicons name="information-circle-outline" size={14} color={C.accent} /> <Text style={{ fontWeight: '600', color: C.accent }}>Форматы:</Text> Вы можете импортировать <Text style={{ fontWeight: '700' }}>CSV</Text> или <Text style={{ fontWeight: '700' }}>TXT</Text> файлы для автоматического шифрования в <Text style={{ color: C.success }}>.dat</Text>.
                 </Text>
                 <Text style={[styles.helpText, { marginTop: 8 }]}>
                   • <Text style={{ fontWeight: '700' }}>Управление:</Text> Вы можете редактировать тесты прямо в приложении. Облачные тесты обновляются на GitHub при сохранении.
@@ -429,7 +429,7 @@ export default function App() {
       setLoading(true);
       const fileName = 'quiz-config.json';
       const path = fileName; // В корне репозитория
-      
+
       // 1. Пытаемся получить существующий файл, чтобы взять его SHA
       let sha = null;
       try {
@@ -441,7 +441,7 @@ export default function App() {
 
       // 2. Подготавливаем JSON
       const content = JSON.stringify(configData, null, 2);
-      
+
       // 3. Отправляем в GitHub (напрямую, так как это текстовый JSON)
       const res = await githubRequest(path, 'PUT', {
         message: `update: remote configuration [app-editor]`,
@@ -1032,7 +1032,7 @@ export default function App() {
       // Не очищаем userName здесь, так как он может понадобиться студенту, 
       // а учитель переходит на другой экран. 
       // Но если это был код входа, то лучше очистить, чтобы не светить его.
-      setUserName(''); 
+      setUserName('');
     } else {
       // Если это не код входа, сохраняем как имя студента
       await AsyncStorage.setItem(CACHE_KEYS.STUDENT_NAME, text);
@@ -2645,11 +2645,11 @@ export default function App() {
                 <Card style={{ padding: 20, backgroundColor: 'rgba(91, 139, 245, 0.08)', marginTop: 10, borderLeftWidth: 4, borderLeftColor: C.accent, minHeight: 300 }}>
                   <Text style={{ fontSize: 22, fontWeight: '700', color: C.accent, marginBottom: 12 }}>🚀 Быстрый старт</Text>
                   <Text style={{ fontSize: 19, color: C.textPrimary, lineHeight: 28 }}>
-                    • <Text style={{ fontWeight: '700' }}>Создание:</Text> Используйте встроенный редактор или импортируйте CSV-файлы.{"\n"}
-                    • <Text style={{ fontWeight: '700' }}>Облако:</Text> Для работы с GitHub укажите ваш <Text style={{ color: C.accent }}>Username</Text> и <Text style={{ color: C.accent }}>Token</Text> в профиле.{"\n"}
-                    • <Text style={{ fontWeight: '700' }}>Синхронизация:</Text> Все изменения в репозитории <Text style={{ fontStyle: 'italic' }}>quiz-app-data</Text> отслеживаются автоматически.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Создание:</Text> Используйте встроенный редактор или импортируйте CSV/TXT файлы.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Облако:</Text> Для работы с GitHub укажите ваш <Text style={{ color: C.accent }}>Username</Text>, <Text style={{ color: C.accent }}>Repo</Text> и <Text style={{ color: C.accent }}>Token</Text> в профиле.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Синхронизация:</Text> Все изменения в вашем репозитории отслеживаются автоматически.{"\n"}
                     • <Text style={{ fontWeight: '700' }}>Безопасность:</Text> Файлы <Text style={{ color: C.success }}>.dat</Text> шифруются ключом приложения.{"\n"}
-                    • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Кнопка со значком облака в управлении тестами загружает ваш тест в общую базу <Text style={{ color: C.accent }}>Мастера тестов</Text> для всех учеников.{"\n"}
+                    • <Text style={{ fontWeight: '700' }}>Публикация:</Text> Тесты загружаются в ваш личный репозиторий, а ученики подписываются на ваши обновления.{"\n"}
                     • <Text style={{ color: C.textSecondary, fontSize: 16, marginTop: 10 }}>Листайте вниз для доступа к Dev Tools.</Text>
                   </Text>
                 </Card>
@@ -2679,10 +2679,10 @@ export default function App() {
                     Cooldown: `${(config.TEST_COOLDOWN_MS / 3600000).toFixed(1)}ч`,
                     MaxFileSize: `${Math.round(config.maxQuizFileBytes / 1024)}KB`
                   })}
-                  <Btn 
-                    label="Синхронизировать конфиг" 
-                    onPress={() => loadConfig()} 
-                    variant="ghost" 
+                  <Btn
+                    label="Синхронизировать конфиг"
+                    onPress={() => loadConfig()}
+                    variant="ghost"
                     style={{ marginTop: 4, height: 36, borderColor: C.success, borderWidth: 1 }}
                     textStyle={{ fontSize: 11, color: C.success }}
                   />
@@ -2711,7 +2711,7 @@ export default function App() {
 
                 {/* 4. Developer Tools */}
                 <Card style={{ padding: 16, backgroundColor: 'rgba(255,140,0,0.05)', marginTop: 24, marginBottom: 20 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 12 }}>🛠 Инструменты разработчика</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFA700', marginBottom: 12 }}>🛠 Инструменты разработчика (локально)</Text>
                   <View style={{ alignItems: 'center' }}>
                     <Btn
                       label="Сбросить все блокировки тестов"
@@ -3402,7 +3402,7 @@ export default function App() {
                   Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
                 </Text>
                 <FlatList
-                  data={cloudRegistry}
+                  data={cloudRegistry.filter(item => item.authorId === teacherProfile?.owner)}
                   keyExtractor={(item) => item.id}
                   ListEmptyComponent={<Text style={styles.welcomeDesc}>В облаке пусто.</Text>}
                   renderItem={({ item }) => {
