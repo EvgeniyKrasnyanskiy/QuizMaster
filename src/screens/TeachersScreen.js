@@ -193,7 +193,7 @@ export default function TeachersScreen({
         <Text style={[styles.label, { marginBottom: 12 }]}>Ваши подписки</Text>
         <FlatList
           data={subscriptions}
-          keyExtractor={(item) => item.owner}
+          keyExtractor={(item, index) => item.id || item.owner || index.toString()}
           renderItem={({ item }) => (
             <View style={[styles.libraryRow, { backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
               <View style={{ flex: 1 }}>

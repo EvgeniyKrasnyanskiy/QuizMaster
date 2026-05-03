@@ -1079,9 +1079,11 @@ export default function App() {
 
       // 2. Обработка автора из реестра для подписок
       const authorName = registry.author || registry.username || 'Master Source';
-      if (!subscriptions.some(s => s.name === authorName)) {
+      const subId = `master-public-${registry.id || 'reg'}`;
+      
+      if (!subscriptions.some(s => s.name === authorName || s.id === subId)) {
         const newSub = {
-          id: 'master-public-reg',
+          id: subId,
           name: authorName,
           owner: 'EvgeniyKrasnyanskiy',
           repo: 'quiz-app-data',
