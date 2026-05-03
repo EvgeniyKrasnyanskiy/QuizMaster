@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from '../styles';
-import { C, CACHE_KEYS } from '../constants';
+import { C, CACHE_KEYS, API_TIMEOUT } from '../constants';
 
 const Card = ({ children, style }) => (
   <View style={[styles.card, style]}>{children}</View>
@@ -57,13 +57,21 @@ export default function TeacherProfileScreen({
       setLoading(true);
       try {
         const url = `https://api.github.com/repos/${owner}/${repo}`;
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-          }
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+        let response;
+        try {
+          response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
         if (response.status === 200) {
           if (Platform.OS === 'android') {
             ToastAndroid.show("Соединение активно ✅", ToastAndroid.SHORT);
@@ -91,24 +99,40 @@ export default function TeacherProfileScreen({
     try {
       // 1. Проверяем сам репозиторий
       const url = `https://api.github.com/repos/${owner}/${repo}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `token ${token}`,
-          'Accept': 'application/vnd.github.v3+json',
-        }
-      });
-
-      if (response.status === 200) {
-        // 2. Проверяем наличие registry.json (как требует инструкция)
-        const regUrl = `https://api.github.com/repos/${owner}/${repo}/contents/registry.json`;
-        const regRes = await fetch(regUrl, {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      let response;
+      try {
+        response = await fetch(url, {
           method: 'GET',
           headers: {
             'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json',
-          }
+          },
+          signal: controller.signal
         });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (response.status === 200) {
+        // 2. Проверяем наличие registry.json (как требует инструкция)
+        const regUrl = `https://api.github.com/repos/${owner}/${repo}/contents/registry.json`;
+        const regController = new AbortController();
+        const regTimeoutId = setTimeout(() => regController.abort(), API_TIMEOUT);
+        let regRes;
+        try {
+          regRes = await fetch(regUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+            signal: regController.signal
+          });
+        } finally {
+          clearTimeout(regTimeoutId);
+        }
 
         if (regRes.status !== 200) {
           Alert.alert(

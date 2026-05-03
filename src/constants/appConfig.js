@@ -8,13 +8,13 @@ export const COOLDOWN_SETTINGS = {
   MS: 1 * 60 * 60 * 1000,
 };
 
-export const API_TIMEOUT = 5000;
+export const API_TIMEOUT = 10000;
 
 const _QUIZ_DIRS = {
-  get ROOT() { return `${FileSystem.documentDirectory || ''}/Quizzes/`; },
-  get STUDENT() { return `${FileSystem.documentDirectory || ''}/Quizzes/Student/`; },
-  get TEACHER() { return `${FileSystem.documentDirectory || ''}/Quizzes/Teacher/`; },
-  get DOWNLOADS() { return `${FileSystem.documentDirectory || ''}/Quizzes/Downloads/`; },
+  get ROOT() { return `${FileSystem.documentDirectory || ''}Quizzes/`; },
+  get STUDENT() { return `${FileSystem.documentDirectory || ''}Quizzes/Student/`; },
+  get TEACHER() { return `${FileSystem.documentDirectory || ''}Quizzes/Teacher/`; },
+  get DOWNLOADS() { return `${FileSystem.documentDirectory || ''}Quizzes/Downloads/`; },
 };
 export { _QUIZ_DIRS as QUIZ_DIRS };
 
@@ -108,7 +108,7 @@ export const DEFAULT_CONFIG = {
   reportEmail: '',
   allowedQuizHosts: ['raw.githubusercontent.com', 'google.com'],
   maxQuizFileBytes: 524288,
-  remoteFetchTimeoutMs: 5000,
+  remoteFetchTimeoutMs: 10000,
   TEST_COOLDOWN_MS: 3600000,
   disabled: false,
 };

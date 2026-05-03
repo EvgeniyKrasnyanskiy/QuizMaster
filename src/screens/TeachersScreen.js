@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from '../styles';
-import { C, CACHE_KEYS, GITHUB_CONFIG, MASTER_TEACHER } from '../constants';
+import { C, CACHE_KEYS, GITHUB_CONFIG, MASTER_TEACHER, API_TIMEOUT } from '../constants';
 
 const Card = ({ children, style }) => (
   <View style={[styles.card, style]}>{children}</View>
@@ -66,7 +66,15 @@ export default function TeachersScreen({
     try {
       // Проверяем существование репозитория анонимно
       const url = `https://api.github.com/repos/${username}/${repoName}`;
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      
+      let response;
+      try {
+        response = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (response.status === 200) {
         const isOwner = teacherProfile?.owner === username && teacherProfile?.repo === repoName;

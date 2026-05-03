@@ -363,7 +363,7 @@ export default function App() {
   // ── Загрузка удалённого конфига ──
   const loadConfig = async ({ silent = false } = {}) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
     try {
       const res = await fetch(GITHUB_CONFIG.CONFIG_URL, { signal: controller.signal });
@@ -678,7 +678,7 @@ export default function App() {
       let downloadedCount = 0;
       for (const item of registry) {
         // Изоляция: папка автора + оригинальное имя
-        const authorDir = `${DOWNLOADS_DIR}${item.authorId}/`;
+        const authorDir = `${SafeDirs.DOWNLOADS}${item.authorId}/`;
         const localPath = `${authorDir}${item.fileName}`;
 
         // Убеждаемся, что папка автора существует
@@ -707,10 +707,10 @@ export default function App() {
 
       // Очистка "призраков" в папке загрузок
       try {
-        if ((await FileSystem.getInfoAsync(DOWNLOADS_DIR)).exists) {
-          const authorFolders = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR);
+        if ((await FileSystem.getInfoAsync(SafeDirs.DOWNLOADS)).exists) {
+          const authorFolders = await FileSystem.readDirectoryAsync(SafeDirs.DOWNLOADS);
           for (const authorId of authorFolders) {
-            const authorDir = `${DOWNLOADS_DIR}${authorId}/`;
+            const authorDir = `${SafeDirs.DOWNLOADS}${authorId}/`;
             const files = await FileSystem.readDirectoryAsync(authorDir);
             
             for (const fileName of files) {
@@ -759,7 +759,7 @@ export default function App() {
       let activeNewCount = 0;
 
       for (const item of registry) {
-        const localPath = `${DOWNLOADS_DIR}${item.authorId}/${item.fileName}`;
+        const localPath = `${SafeDirs.DOWNLOADS}${item.authorId}/${item.fileName}`;
         const exists = await FileSystem.getInfoAsync(localPath);
         if (exists.exists && !completed.includes(`${item.authorId}_${item.id}`)) {
           activeNewCount++;
@@ -768,7 +768,10 @@ export default function App() {
       setNewTestsCount(activeNewCount);
       return downloadedCount;
     } catch (e) {
-      console.log('Update check failed:', e.message);
+      console.log("SYNC ERROR DETAILS:", e.message);
+      if (e.message.includes("directory") || e.message.includes("folder")) {
+        console.log("Possible missing directory:", SafeDirs.DOWNLOADS);
+      }
       return null;
     }
   };
@@ -1138,7 +1141,7 @@ export default function App() {
     const { isStudent = false, authorId: forcedAuthorId = null } = options;
     await ensureQuizDirectories();
     
-    // Рекурсивный поиск в DOWNLOADS_DIR, если это путь к корню загрузок
+    // Рекурсивный поиск в SafeDirs.DOWNLOADS, если это путь к корню загрузок
     if (folderPath === SafeDirs.DOWNLOADS) {
       let allRecords = [];
       const authorFolders = await FileSystem.readDirectoryAsync(SafeDirs.DOWNLOADS);
@@ -1908,7 +1911,15 @@ export default function App() {
     try {
       setLoading(true);
       const resolvedUrl = validateQuizUrl(cleanUrl, allowedQuizHosts);
-      const res = await fetch(resolvedUrl);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      
+      let res;
+      try {
+        res = await fetch(resolvedUrl, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (!res.ok) throw new Error('Не удалось загрузить файл по ссылке.');
 
       const contentLengthHeader = res.headers.get('content-length');
