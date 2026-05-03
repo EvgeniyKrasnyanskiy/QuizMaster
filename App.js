@@ -3113,7 +3113,7 @@ export default function App() {
                   </View>
                 )}
               />
-              <Btn label="📝 Создать тест" onPress={handleCreateTeacherQuiz} style={{ marginTop: 12, backgroundColor: '#FFA700' }} />
+              <Btn label="📝 Создать тест" onPress={handleCreateTeacherQuiz} variant="gold" style={{ marginTop: 12 }} />
               <Btn label="📥 Импортировать файл" onPress={handleEncryptAndSave} variant="black" style={{ marginTop: 10, borderColor: '#FFD700' }} />
               <Btn label="🗑 Удалить все" onPress={() => handleDeleteAllFiles([SafeDirs.TEACHER, SafeDirs.DOWNLOADS], 'teacher')} variant="black" style={{ marginTop: 10 }} />
             </View>
@@ -3149,7 +3149,7 @@ export default function App() {
                 textAlignVertical="top"
               />
               <View style={styles.editorActions}>
-                <Btn label="Сохранить" onPress={handleSaveEditedQuiz} disabled={!!loading} style={{ backgroundColor: '#FFA700' }} />
+                <Btn label="Сохранить" onPress={handleSaveEditedQuiz} disabled={!!loading} variant="gold" />
                 <Btn label="Отмена" variant="black" onPress={() => setScreen('teacher-library')} style={{ marginTop: 8 }} />
               </View>
             </View>
