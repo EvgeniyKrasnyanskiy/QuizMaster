@@ -1041,21 +1041,18 @@ export default function App() {
       const studentFiles = await FileSystem.readDirectoryAsync(SafeDirs.STUDENT);
       // Если библиотека пуста (совсем первый запуск)
       if (studentFiles.length === 0) {
-        console.log("Library is empty, initializing demo quiz...");
-        const demoAsset = require('./assets/quizzes/demo_quiz.dat');
-        console.log("Demo source:", demoAsset);
-        const asset = Asset.fromModule(demoAsset);
-        await asset.downloadAsync();
-
         const studentDir = SafeDirs.STUDENT;
-        if (!studentDir || studentDir.includes('undefined')) {
-          throw new Error("Student directory is not ready or undefined");
-        }
-
         const demoPath = studentDir + 'System_Welcome_Demo.dat';
-        console.log("Initializing demo at:", demoPath);
-        await FileSystem.copyAsync({ from: asset.localUri, to: demoPath });
-        console.log("Demo quiz initialized successfully");
+        
+        // Генерируем зашифрованный контент на лету из актуального шаблона
+        const encryptedContent = encodeEncryptedPayload(QUIZ_TEMPLATE);
+        
+        console.log("Initializing dynamic demo at:", demoPath);
+        await FileSystem.writeAsStringAsync(demoPath, encryptedContent, { 
+          encoding: FileSystem.EncodingType.UTF8 
+        });
+        
+        console.log("Demo quiz generated and initialized successfully");
         await refreshStudentLibrary();
       }
     } catch (e) {
