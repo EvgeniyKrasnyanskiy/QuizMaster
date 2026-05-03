@@ -707,15 +707,18 @@ export default function App() {
             if (cloudFile && cloudFile.content) {
               const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
               const binary = atob(cloudFile.content.replace(/\n/g, ''));
-              const decrypted = decodeEncryptedPayload(binary, effectiveSalt);
               
-              // Валидация: проверяем наличие вопросов перед сохранением
+              console.log(`[Sync] Raw fetched (50 chars): ${binary.substring(0, 50)}`);
+              const decrypted = decodeEncryptedPayload(binary, effectiveSalt);
+              console.log(`[Sync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
+              
               const { questions } = parseQuestions(decrypted);
               if (questions && questions.length > 0) {
+                // Overwrite local file with correctly decrypted content
                 await FileSystem.writeAsStringAsync(localPath, decrypted);
                 downloadedCount++;
               } else {
-                console.warn(`[Sync] Skipped invalid file: ${item.fileName}`);
+                console.warn(`[MasterSync] File ${item.fileName} is corrupted or decryption failed. Skipping save.`);
               }
             }
           } catch (e) {
@@ -1136,13 +1139,20 @@ export default function App() {
 
           const rawContent = await fileRes.text();
           const effectiveSalt = APP_SALT || FALLBACK_APP_SALT;
+          
+          console.log(`[MasterSync] Raw fetched (50 chars): ${rawContent.substring(0, 50)}`);
           const decrypted = decodeEncryptedPayload(rawContent, effectiveSalt);
+          console.log(`[MasterSync] Decrypted (50 chars): ${decrypted.substring(0, 50)}`);
+          
           const { questions } = parseQuestions(decrypted);
           
           if (questions && questions.length > 0) {
             const savePath = SafeDirs.STUDENT + fileName;
+            // Overwrite local file with correctly decrypted content
             await FileSystem.writeAsStringAsync(savePath, decrypted);
             successCount++;
+          } else {
+            console.warn(`[MasterSync] File ${fileName} is corrupted or decryption failed. Skipping save.`);
           }
         } catch (fileErr) {
           console.log(`[MasterSync] Error ${test?.id || 'unknown'}:`, fileErr.message);
