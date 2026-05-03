@@ -5,10 +5,10 @@ export const AuthService = {
    * Validates teacher password.
    * Currently uses local check, but can be updated to use a backend endpoint.
    */
-  async login(password) {
+  async login(password, customAdminCode) {
     // For now, we still support the legacy hardcoded password check
     // but abstracted into this service.
-    const expected = String(SECURITY_CONFIG.ADMIN_CODE || MASTER_TEACHER.password);
+    const expected = String(customAdminCode || SECURITY_CONFIG.ADMIN_CODE || MASTER_TEACHER.password);
     
     // Artificial delay to simulate network/processing and prevent brute force
     await new Promise(resolve => setTimeout(resolve, 500));

@@ -508,7 +508,7 @@ export default function App() {
     if (body) options.body = JSON.stringify(body);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+    const timeoutId = setTimeout(() => controller.abort(), remoteFetchTimeoutMs);
     options.signal = controller.signal;
 
     try {
@@ -967,7 +967,7 @@ export default function App() {
     if (!text) return;
 
     // Авторизация учителя через AuthService
-    const result = await AuthService.login(text);
+    const result = await AuthService.login(text, config.adminCode);
     if (result.success) {
       refreshTeacherLibrary().finally(() => setScreen('teacher'));
       // Не очищаем userName здесь, так как он может понадобиться студенту, 
@@ -2084,7 +2084,7 @@ export default function App() {
       setLoading(true);
       const resolvedUrl = validateQuizUrl(cleanUrl, allowedQuizHosts);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      const timeoutId = setTimeout(() => controller.abort(), remoteFetchTimeoutMs);
 
       let res;
       try {
@@ -2517,7 +2517,7 @@ export default function App() {
                     </View>
                   )}
 
-                  <Text style={styles.welcomeTitle}>Вход в систему</Text>
+                  <Text style={styles.welcomeTitle}>{config.title || 'Вход в систему'}</Text>
                   <Text style={styles.welcomeDesc}>{config.welcomeDesc}</Text>
                 </View>
                 <Text style={styles.label}>Ваше имя</Text>
@@ -2612,6 +2612,20 @@ export default function App() {
                     Token: GITHUB_CONFIG.TOKEN ? '✅ Установлен (env)' : (teacherProfile?.token ? '✅ Установлен (профиль)' : '❌ Отсутствует'),
                     Connected: !!(GITHUB_CONFIG.OWNER && GITHUB_CONFIG.REPO)
                   })}
+                  {renderConfigSection("Удаленная конфигурация (CLOUD)", {
+                    Title: config.title,
+                    ReportEmail: config.reportEmail || 'не задан',
+                    HostsCount: allowedQuizHosts.length,
+                    Timeout: `${remoteFetchTimeoutMs}ms`,
+                    Cooldown: `${(config.TEST_COOLDOWN_MS / 3600000).toFixed(1)}ч`
+                  })}
+                  <Btn 
+                    label="Синхронизировать конфиг" 
+                    onPress={() => loadConfig()} 
+                    variant="ghost" 
+                    style={{ marginTop: 4, height: 36, borderColor: 'rgba(91, 139, 245, 0.3)' }}
+                    textStyle={{ fontSize: 11, color: C.accent }}
+                  />
                 </View>
 
                 {/* 3. System Info Block */}
@@ -2680,9 +2694,11 @@ export default function App() {
       if (screen === 'teacher-profile') {
         return (
           <TeacherProfileScreen
+            title="Мой профиль"
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
             onBack={() => setScreen('teacher')}
+            apiTimeout={remoteFetchTimeoutMs}
           />
         );
       }
@@ -2694,6 +2710,7 @@ export default function App() {
             teacherProfile={teacherProfile}
             setTeacherProfile={setTeacherProfile}
             onBack={() => setScreen('teacher')}
+            apiTimeout={remoteFetchTimeoutMs}
           />
         );
       }
@@ -2913,6 +2930,7 @@ export default function App() {
             subscriptions={subscriptions || []}
             setSubscriptions={setSubscriptions}
             teacherProfile={teacherProfile}
+            apiTimeout={remoteFetchTimeoutMs}
             onBack={() => {
               setScreen('student-library');
               checkForUpdates();

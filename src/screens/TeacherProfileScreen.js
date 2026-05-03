@@ -36,7 +36,8 @@ export default function TeacherProfileScreen({
   teacherProfile,
   setTeacherProfile,
   onBack,
-  title
+  title,
+  apiTimeout
 }) {
   const [loading, setLoading] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
@@ -56,7 +57,7 @@ export default function TeacherProfileScreen({
       try {
         const url = `https://api.github.com/repos/${owner}/${repo}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+        const timeoutId = setTimeout(() => controller.abort(), apiTimeout || API_TIMEOUT);
         let response;
         try {
           response = await fetch(url, {
@@ -99,7 +100,7 @@ export default function TeacherProfileScreen({
       // 1. Проверяем сам репозиторий
       const url = `https://api.github.com/repos/${owner}/${repo}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      const timeoutId = setTimeout(() => controller.abort(), apiTimeout || API_TIMEOUT);
       let response;
       try {
         response = await fetch(url, {
@@ -118,7 +119,7 @@ export default function TeacherProfileScreen({
         // 2. Проверяем наличие registry.json (как требует инструкция)
         const regUrl = `https://api.github.com/repos/${owner}/${repo}/contents/registry.json`;
         const regController = new AbortController();
-        const regTimeoutId = setTimeout(() => regController.abort(), API_TIMEOUT);
+        const regTimeoutId = setTimeout(() => regController.abort(), apiTimeout || API_TIMEOUT);
         let regRes;
         try {
           regRes = await fetch(regUrl, {

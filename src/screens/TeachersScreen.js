@@ -36,7 +36,8 @@ export default function TeachersScreen({
   subscriptions,
   setSubscriptions,
   teacherProfile,
-  onBack
+  onBack,
+  apiTimeout
 }) {
   const [newTeacher, setNewTeacher] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,7 +83,7 @@ export default function TeachersScreen({
       const url = `https://api.github.com/repos/${username}/${repoName}`;
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+      const timeoutId = setTimeout(() => controller.abort(), apiTimeout || API_TIMEOUT);
       
       let response;
       try {
