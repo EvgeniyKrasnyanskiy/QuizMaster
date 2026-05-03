@@ -2464,12 +2464,12 @@ export default function App() {
               </TouchableOpacity>
             )}
 
-            <Btn
-              label="Закрыть"
+            <TouchableOpacity
+              style={{ marginTop: 20, alignItems: 'center', justifyContent: 'center', height: 48 }}
               onPress={() => setActionModalVisible(false)}
-              style={{ marginTop: 20, backgroundColor: C.surface, borderWidth: 0 }}
-              textStyle={{ color: '#00BFFF' }}
-            />
+            >
+              <Text style={{ color: '#00BFFF', fontWeight: '700', fontSize: 16 }}>Закрыть</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
