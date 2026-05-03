@@ -2438,8 +2438,6 @@ export default function App() {
     const fileName = item.path.split('/').pop();
     const statusKey = buildQuizStatusKey(fileName);
 
-    const canDelete = !isCloud || isOrphaned;
-
     return (
       <Modal visible={actionModalVisible} transparent animationType="fade" onRequestClose={() => setActionModalVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setActionModalVisible(false)}>
