@@ -112,3 +112,5 @@ export const DEFAULT_CONFIG = {
   TEST_COOLDOWN_MS: 3600000,
   disabled: false,
 };
+
+export const MASTER_SOURCE_URL = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/tests/';
