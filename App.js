@@ -1042,7 +1042,7 @@ export default function App() {
       // Если библиотека пуста (совсем первый запуск)
       if (studentFiles.length === 0) {
         const studentDir = SafeDirs.STUDENT;
-        const demoPath = studentDir + 'System_Welcome_Demo.dat';
+        const demoPath = studentDir + 'System_Welcome_Demo_v2.dat';
         
         // Генерируем зашифрованный контент на лету из актуального шаблона
         const encryptedContent = encodeEncryptedPayload(QUIZ_TEMPLATE);
