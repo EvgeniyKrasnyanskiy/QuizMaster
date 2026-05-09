@@ -2467,6 +2467,7 @@ export default function App() {
           style: 'destructive',
           onPress: () => {
             setScreen('student-library');
+            refreshStudentLibrary();
           },
         },
         { text: 'Отмена', style: 'cancel' },
@@ -3015,7 +3016,7 @@ export default function App() {
                               if (status.hasProgress) {
                                 return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Прерван</Text>;
                               }
-                              return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начато</Text>;
+                              return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начат</Text>;
                             }
                             if (correctCount === totalCount && totalCount > 0) {
                               return <Text style={{ color: C.success, fontSize: 12, fontWeight: '700' }}>🌟 Отлично! {correctCount}/{totalCount}</Text>;
