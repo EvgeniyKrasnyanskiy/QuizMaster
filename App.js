@@ -3,7 +3,7 @@ import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   Alert, ScrollView, Platform, FlatList,
   StatusBar, ActivityIndicator, KeyboardAvoidingView,
-  Modal, SectionList, RefreshControl, Animated, Easing, ToastAndroid,
+  Modal, SectionList, RefreshControl, Animated, Easing, ToastAndroid, Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -397,6 +397,27 @@ export default function App() {
   const [newSubUsername, setNewSubUsername] = useState('');
   const [profileInput, setProfileInput] = useState({ owner: '', repo: '', token: '' });
 
+  const checkAppVersion = async () => {
+    try {
+      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/package.json');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.version && data.version !== APP_VERSION) {
+          Alert.alert(
+            'Доступно обновление',
+            `Доступна новая версия приложения: ${data.version}. Текущая версия: ${APP_VERSION}.\n\nРекомендуется обновить приложение для стабильной работы.`,
+            [
+              { text: 'Позже', style: 'cancel' },
+              { text: 'Скачать', onPress: () => Linking.openURL('https://github.com/EvgeniyKrasnyanskiy/QuizApp/releases') }
+            ]
+          );
+        }
+      }
+    } catch (e) {
+      console.log('Version check failed:', e.message);
+    }
+  };
+
   // ── Загрузка удалённого конфига ──
   const loadConfig = async ({ silent = false } = {}) => {
     const controller = new AbortController();
@@ -543,6 +564,24 @@ export default function App() {
         if (hiddenRaw) {
           setPermanentlyHiddenIds(JSON.parse(hiddenRaw));
         }
+
+        // Load teacher profile
+        const savedProfile = await AsyncStorage.getItem(CACHE_KEYS.TEACHER_PROFILE);
+        if (savedProfile) {
+          try {
+            const profile = JSON.parse(savedProfile);
+            if (profile.token) {
+              // Decrypt token
+              profile.token = decodeEncryptedPayload(profile.token);
+            }
+            setTeacherProfile(profile);
+            setProfileInput({ owner: profile.owner, repo: profile.repo, token: profile.token });
+          } catch (profileErr) {
+            console.warn('Failed to load teacher profile:', profileErr.message);
+          }
+        }
+
+        checkAppVersion();
 
       } catch (e) {
         console.warn('Bootstrap Error:', e.message);
@@ -960,6 +999,12 @@ export default function App() {
       if (res) {
         const profile = { owner, repo, token };
         setTeacherProfile(profile);
+
+        // Encrypt and save profile
+        const profileToSave = { ...profile };
+        profileToSave.token = encodeEncryptedPayload(token);
+        await AsyncStorage.setItem(CACHE_KEYS.TEACHER_PROFILE, JSON.stringify(profileToSave));
+
         Alert.alert('Успех', 'Профиль учителя успешно настроен и проверен.');
         setScreen('teacher');
       }
@@ -1560,11 +1605,24 @@ export default function App() {
   };
 
   const refreshTeacherLibrary = async () => {
-    // В режиме учителя показываем свои тесты и тесты из папки загрузок
     const ownFiles = await listDatFiles(SafeDirs.TEACHER);
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS);
 
-    const allFiles = [...ownFiles, ...downloadedFiles].sort((a, b) => b.mtime - a.mtime);
+    const combined = [...ownFiles, ...downloadedFiles];
+    
+    // Deduplicate and filter 0-size files
+    const uniqueFiles = [];
+    const seenPaths = new Set();
+    
+    for (const file of combined) {
+      if (file.size <= 0) continue;
+      if (!seenPaths.has(file.path)) {
+        seenPaths.add(file.path);
+        uniqueFiles.push(file);
+      }
+    }
+
+    const allFiles = uniqueFiles.sort((a, b) => b.mtime - a.mtime);
     setTeacherLibraryFiles(allFiles);
     return allFiles;
   };
@@ -3091,7 +3149,16 @@ export default function App() {
               "На устройстве",
               () => setScreen('teacher'),
               <TouchableOpacity
-                onPress={() => setScreen('cloud-manager')}
+                onPress={async () => {
+                  setScreen('cloud-manager');
+                  setLoading(true);
+                  try {
+                    const registry = await fetchCloudRegistry();
+                    setCloudRegistry(registry);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
                 style={styles.headerBack}
               >
                 <Ionicons name="cloud-outline" size={22} color={C.accent} />
@@ -3117,7 +3184,7 @@ export default function App() {
                         )}
                       </View>
                       <Text style={[styles.libraryMeta, { color: C.accent, fontWeight: '600' }]}>
-                        Вопросов: {item.questionCount || 0} | Размер: {Math.round(item.size / 1024)} KB
+                        Вопросов: {item.questionCount || 0}{"\n"}Размер: {Math.round(item.size / 1024)} KB
                       </Text>
                       <Text style={[styles.libraryMeta, { fontSize: 11, marginTop: 2 }]}>
                         Создан: {formatNiceDate(getStoredQuizMeta(item.name).createdAt || item.mtime * 1000)}
