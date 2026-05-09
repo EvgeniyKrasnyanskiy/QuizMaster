@@ -1565,9 +1565,19 @@ export default function App() {
       const score = results.filter(r => r.correct).length;
       const isCompleted = !!(status?.completedAt || results.length > 0);
 
+      let hasActualProgress = false;
+      if (progressRaw) {
+        try {
+          const p = JSON.parse(progressRaw);
+          hasActualProgress = Array.isArray(p.results) && p.results.some(r => r !== null);
+        } catch {
+          hasActualProgress = false;
+        }
+      }
+
       const statusObj = {
         ...(status || {}),
-        hasProgress: Boolean(progressRaw),
+        hasProgress: hasActualProgress,
         isLocked,
         authorId: file.authorId,
         canEdit: file.canEdit,
@@ -3014,7 +3024,7 @@ export default function App() {
 
                             if (!hasResult) {
                               if (status.hasProgress) {
-                                return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Прерван</Text>;
+                                return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Не закончен</Text>;
                               }
                               return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начат</Text>;
                             }
