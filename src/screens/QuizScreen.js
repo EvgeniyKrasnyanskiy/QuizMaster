@@ -229,17 +229,39 @@ export default function QuizScreen({
 
     const isLast = currentIdx === questions.length - 1;
     if (isLast) {
-      if (firstEmptyIdx !== -1 && firstEmptyIdx !== currentIdx) {
-        setCurrentIdx(firstEmptyIdx);
+      const hasOtherSkipped = results.some((r, i) => r === null && i !== currentIdx);
+      if (hasOtherSkipped) {
+        const nextEmpty = results.findIndex((r, i) => r === null && i !== currentIdx);
+        setCurrentIdx(nextEmpty !== -1 ? nextEmpty : firstEmptyIdx);
       } else {
-        const finalRaw = [...results];
-        onFinish({
-          results: finalizeResults(finalRaw, questionTimes),
-          rawAnswers: finalRaw,
-          questions,
-          totalTime,
-          questionTimes
-        });
+        if (results[currentIdx] === null) {
+          Alert.alert(
+            "Внимание", 
+            "Вы не ответили на последний вопрос. Завершить тест с прочерком?",
+            [
+              { text: "Отмена", style: "cancel" },
+              { text: "Завершить", style: "destructive", onPress: () => {
+                  const finalRaw = [...results];
+                  onFinish({
+                    results: finalizeResults(finalRaw, questionTimes),
+                    rawAnswers: finalRaw,
+                    questions,
+                    totalTime,
+                    questionTimes
+                  });
+              }}
+            ]
+          );
+        } else {
+          const finalRaw = [...results];
+          onFinish({
+            results: finalizeResults(finalRaw, questionTimes),
+            rawAnswers: finalRaw,
+            questions,
+            totalTime,
+            questionTimes
+          });
+        }
       }
     } else {
       setCurrentIdx(currentIdx + 1);
@@ -338,7 +360,13 @@ export default function QuizScreen({
               style={[L.navBtn, allAnswered && { backgroundColor: C.success, borderColor: C.success }]}
             >
               <Text style={[L.navBtnText, allAnswered && { color: C.white }]}>
-                {allAnswered ? '✅' : (currentIdx === questions.length - 1 ? '↩️' : 'Вперёд')}
+                {allAnswered ? '✅ Завершить' : (() => {
+                  if (currentIdx === questions.length - 1) {
+                    const hasOtherSkipped = results.some((r, i) => r === null && i !== currentIdx);
+                    return hasOtherSkipped ? '↩️ К пропущенным' : 'Завершить';
+                  }
+                  return 'Вперёд';
+                })()}
               </Text>
             </TouchableOpacity>
           </View>
