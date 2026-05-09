@@ -320,11 +320,13 @@ export default function TeacherProfileScreen({
           </Text>
         </Card>
 
-        <Card style={{ padding: 20, borderStyle: 'dashed', backgroundColor: 'transparent', borderWidth: 1, borderColor: C.border }}>
-          <Text style={[styles.welcomeDesc, { textAlign: 'center', fontSize: 13 }]}>
-            Статистика публикаций и управление облачными тестами будут доступны после успешной настройки профиля.
-          </Text>
-        </Card>
+        {!isConnected && (
+          <Card style={{ padding: 20, borderStyle: 'dashed', backgroundColor: 'transparent', borderWidth: 1, borderColor: C.border }}>
+            <Text style={[styles.welcomeDesc, { textAlign: 'center', fontSize: 13 }]}>
+              После настройки GitHub вы сможете публиковать свои тесты в облако прямо из библиотеки, чтобы они стали доступны вашим ученикам.
+            </Text>
+          </Card>
+        )}
 
         {isMasterAdmin && (
           <Card style={{ padding: 20, marginTop: 20, marginBottom: 40 }}>
