@@ -56,3 +56,7 @@ npm-debug.log*
 
 # Прочее
 TODO.md
+# .gemini ignore but keep docs
+.gemini/
+!.gemini/docs/
+
