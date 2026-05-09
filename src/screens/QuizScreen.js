@@ -59,11 +59,22 @@ export default function QuizScreen({
   const insets = useSafeAreaInsets();
   const safeStyle = { flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: C.bg };
 
+  // Normalize restored arrays to match current question count (guards against quiz file changes)
+  const normalizeArray = (arr, length, defaultVal) => {
+    const base = new Array(length).fill(defaultVal);
+    if (Array.isArray(arr)) arr.slice(0, length).forEach((v, i) => { base[i] = v; });
+    return base;
+  };
+
   const [currentIdx, setCurrentIdx] = useState(initialData?.currentIdx || 0);
-  const [results, setResults] = useState(initialData?.results || new Array(questions.length).fill(null));
+  const [results, setResults] = useState(
+    normalizeArray(initialData?.results, questions.length, null)
+  );
   const [totalTime, setTotalTime] = useState(initialData?.totalTime || 0);
   const [questionStartTime, setQuestionStartTime] = useState(initialData?.questionStartTime || 0);
-  const [questionTimes, setQuestionTimes] = useState(initialData?.questionTimes || new Array(questions.length).fill(0));
+  const [questionTimes, setQuestionTimes] = useState(
+    normalizeArray(initialData?.questionTimes, questions.length, 0)
+  );
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const [selectedAnswers, setSelectedAnswers] = useState([]);
@@ -336,7 +347,7 @@ export default function QuizScreen({
                   return (
                     <TouchableOpacity
                       key={i}
-                      onPress={() => toggleMultiAnswer(i)}
+                      onPress={() => toggleOption(i)}
                       activeOpacity={0.8}
                       style={[styles.option, selected && styles.optionSelected]}
                     >

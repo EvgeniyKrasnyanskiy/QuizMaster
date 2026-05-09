@@ -72,7 +72,7 @@ export default function TeacherLibraryScreen({
                   )}
                 </View>
                 <Text style={[styles.libraryMeta, { color: C.accent, fontWeight: '600' }]}>
-                  Вопросов: {item.questionCount || 0}{"\n"}Размер: {Math.round(item.size / 1024)} KB
+                  Вопросов: {item.questionCount || 0}{"\n"}Размер: {item.size < 1024 ? '< 1' : Math.round(item.size / 1024)} KB
                 </Text>
                 <Text style={[styles.libraryMeta, { fontSize: 11, marginTop: 2 }]}>
                   Создан: {formatNiceDate(item.createdAt || item.mtime * 1000)}
