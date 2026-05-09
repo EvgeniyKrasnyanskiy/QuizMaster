@@ -310,7 +310,17 @@ export default function App() {
   const [localConfig, setLocalConfig] = useState(DEFAULT_CONFIG);
   const [remoteConfigSnapshot, setRemoteConfigSnapshot] = useState(null);
   const [configSyncFailed, setConfigSyncFailed] = useState(false);
-  const [screen, setScreen] = useState('welcome');
+  const [screen, _setScreen] = useState('welcome');
+  const setScreen = (val) => {
+    if (val === 'student-library') {
+      const now = Date.now();
+      const COOLDOWN = 10 * 60 * 1000; // 10 minutes
+      if (now - lastSyncTime > COOLDOWN) {
+        checkForUpdates();
+      }
+    }
+    _setScreen(val);
+  };
   const [userName, setUserName] = useState('');
   const [questions, setQuestions] = useState([]);
   const [fileUrl, setFileUrl] = useState('');
@@ -373,16 +383,7 @@ export default function App() {
   const [editFilePath, setEditFilePath] = useState('');
   const [editFileName, setEditFileName] = useState('');
 
-  // Auto-sync on student library mount
-  useEffect(() => {
-    if (screen === 'student-library') {
-      const now = Date.now();
-      const COOLDOWN = 10 * 60 * 1000; // 10 minutes
-      if (now - lastSyncTime > COOLDOWN) {
-        checkForUpdates();
-      }
-    }
-  }, [screen]);
+
   const [editContent, setEditContent] = useState('');
   const [editIsNew, setEditIsNew] = useState(false);
   const [resultsReadOnly, setResultsReadOnly] = useState(false);
@@ -621,6 +622,11 @@ export default function App() {
     };
   }, [subscriptions, isAppReady]);
 
+  const getActiveTeacherDir = () => {
+    const owner = teacherProfile?.owner || 'local';
+    return `${QUIZ_DIRS.TEACHER}${owner}/`;
+  };
+
   // ─────────────────────────────────────────────
   // GITHUB CLOUD HELPERS
   // ─────────────────────────────────────────────
@@ -748,7 +754,6 @@ export default function App() {
 
     try {
       setLoading(true);
-      const meta = getStoredQuizMeta(file.name);
       const testId = stripDatExtension(file.name);
       const fileContent = await FileSystem.readAsStringAsync(file.path, {
         encoding: FileSystem.EncodingType.Base64
@@ -765,7 +770,7 @@ export default function App() {
 
       await syncCloudRegistry('add', {
         id: testId,
-        title: meta.originalTitle,
+        title: file.displayName,
         qCount: file.questionCount || 0,
         fileName: file.name
       });
@@ -1206,14 +1211,20 @@ export default function App() {
   const reportEmail = typeof config.reportEmail === 'string' ? config.reportEmail.trim() : '';
 
   const ensureQuizDirectories = async () => {
-    const rootInfo = await FileSystem.getInfoAsync(SafeDirs.ROOT);
-    if (!rootInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.ROOT, { intermediates: true });
-    const studentInfo = await FileSystem.getInfoAsync(SafeDirs.STUDENT);
-    if (!studentInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.STUDENT, { intermediates: true });
-    const teacherInfo = await FileSystem.getInfoAsync(SafeDirs.TEACHER);
-    if (!teacherInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.TEACHER, { intermediates: true });
-    const downloadsInfo = await FileSystem.getInfoAsync(SafeDirs.DOWNLOADS);
-    if (!downloadsInfo.exists) await FileSystem.makeDirectoryAsync(SafeDirs.DOWNLOADS, { intermediates: true });
+    try {
+      for (const key in QUIZ_DIRS) {
+        const dir = QUIZ_DIRS[key];
+        const info = await FileSystem.getInfoAsync(dir);
+        if (!info.exists) {
+          await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+        }
+      }
+      const tDir = getActiveTeacherDir();
+      const tInfo = await FileSystem.getInfoAsync(tDir);
+      if (!tInfo.exists) await FileSystem.makeDirectoryAsync(tDir, { intermediates: true });
+    } catch (e) {
+      console.warn('Failed to ensure directories:', e.message);
+    }
   };
 
   const initDemoQuiz = async () => {
@@ -1432,6 +1443,7 @@ export default function App() {
         }
       }
 
+      let metaDate = null;
       try {
         const encrypted = await FileSystem.readAsStringAsync(fullPath, { encoding: FileSystem.EncodingType.UTF8 });
         const decrypted = decodeEncryptedPayload(encrypted);
@@ -1443,6 +1455,10 @@ export default function App() {
           displayName = metadata.title;
         } else {
           displayName = stripDatExtension(displayName);
+        }
+        
+        if (metadata && metadata.createdat) {
+          metaDate = metadata.createdat;
         }
       } catch (e) {
         displayName = stripDatExtension(displayName);
@@ -1456,8 +1472,9 @@ export default function App() {
         path: fullPath,
         size: typeof info.size === 'number' ? info.size : 0,
         mtime: typeof info.modificationTime === 'number' ? info.modificationTime : 0,
+        createdAt: metaDate,
         questionCount,
-        canEdit: authorId === teacherProfile?.owner || folderPath === SafeDirs.TEACHER,
+        canEdit: authorId === teacherProfile?.owner || folderPath === getActiveTeacherDir(),
       };
     }));
     return records.sort((a, b) => b.mtime - a.mtime);
@@ -1625,7 +1642,12 @@ export default function App() {
   };
 
   const refreshTeacherLibrary = async () => {
-    const ownFiles = await listDatFiles(SafeDirs.TEACHER);
+    const teacherDir = getActiveTeacherDir();
+    const teacherDirInfo = await FileSystem.getInfoAsync(teacherDir);
+    if (!teacherDirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(teacherDir, { intermediates: true });
+    }
+    const ownFiles = await listDatFiles(teacherDir);
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS);
 
     const combined = [...ownFiles, ...downloadedFiles];
@@ -1707,7 +1729,7 @@ export default function App() {
           encoding: FileSystem.EncodingType.UTF8,
         });
         const stampedName = makeSafeFileName(name);
-        await saveDatToLibrary(SafeDirs.TEACHER, stampedName, encrypted);
+        await saveDatToLibrary(getActiveTeacherDir(), stampedName, encrypted);
         await refreshTeacherLibrary();
         Alert.alert('Готово', `Файл .dat импортирован в библиотеку: ${stampedName}`);
       } else {
@@ -1717,7 +1739,7 @@ export default function App() {
         const encrypted = encodeEncryptedPayload(sourceText);
         const baseName = name.replace(/\.[^.]+$/, '');
         const stampedName = `${makeSafeFileName(baseName)}.dat`;
-        await saveDatToLibrary(SafeDirs.TEACHER, stampedName, encrypted);
+        await saveDatToLibrary(getActiveTeacherDir(), stampedName, encrypted);
         await refreshTeacherLibrary();
         Alert.alert('Готово', `Файл зашифрован и сохранен: ${stampedName}`);
       }
@@ -1887,14 +1909,22 @@ export default function App() {
             {
               text: 'Сначала',
               onPress: async () => {
-                await AsyncStorage.removeItem(key);
-                await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+                try {
+                  setLoading(true);
+                  await AsyncStorage.removeItem(key);
+                  await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+                } catch (e) {
+                  Alert.alert('Ошибка', e.message);
+                } finally {
+                  setLoading(false);
+                }
               },
             },
             {
               text: 'Продолжить',
               onPress: async () => {
                 try {
+                  setLoading(true);
                   // Questions are NOT stored in progress payload anymore — reload from .dat file
                   const { questions: loadedQuestions } = await loadQuizFromDatFile(
                     file.path, file.displayName, file.authorId, { navigateToQuiz: false }
@@ -1914,6 +1944,8 @@ export default function App() {
                   setScreen('quiz');
                 } catch (e) {
                   Alert.alert('Ошибка', 'Не удалось загрузить тест: ' + e.message);
+                } finally {
+                  setLoading(false);
                 }
               },
             },
@@ -1955,9 +1987,16 @@ export default function App() {
                       {
                         text: 'Да, начать',
                         onPress: async () => {
-                          // Очищаем старые результаты перед новым запуском
-                          await AsyncStorage.removeItem(statusKey);
-                          await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+                          try {
+                            setLoading(true);
+                            // Очищаем старые результаты перед новым запуском
+                            await AsyncStorage.removeItem(statusKey);
+                            await loadQuizFromDatFile(file.path, file.displayName, file.authorId);
+                          } catch (e) {
+                            Alert.alert('Ошибка', e.message);
+                          } finally {
+                            setLoading(false);
+                          }
                         }
                       }
                     ]
@@ -2221,7 +2260,7 @@ export default function App() {
         Alert.alert('Сохранено', 'Изменения записаны.');
       } else {
         // Если имя изменилось или это новый файл — создаем новый .dat
-        await saveDatToLibrary(SafeDirs.TEACHER, finalName, encrypted);
+        await saveDatToLibrary(getActiveTeacherDir(), finalName, encrypted);
         Alert.alert('Сохранено', `Тест "${finalName}" успешно сохранен.`);
       }
 
@@ -2238,11 +2277,11 @@ export default function App() {
         });
 
         // Обновляем в реестре (могли измениться вопросы)
-        const { questions: validationParsed } = parseQuestions(editContent);
+        const { questions: validationParsed, metadata } = parseQuestions(editContent);
         const qCount = validationParsed ? validationParsed.length : 0;
         await syncCloudRegistry('add', {
           id: stripDatExtension(finalName),
-          title: getStoredQuizMeta(finalName).originalTitle,
+          title: (metadata && metadata.title) || stripDatExtension(finalName),
           qCount: qCount,
           fileName: finalName
         });
@@ -3222,7 +3261,7 @@ export default function App() {
                   <View style={styles.libraryRow}>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.libraryTitle}>{getStoredQuizMeta(item.name).originalTitle}</Text>
+                        <Text style={styles.libraryTitle}>{item.displayName}</Text>
                         {cloudRegistry?.some?.(c => c.id === stripDatExtension(item.name)) && (
                           <Text style={{ marginLeft: 6 }}>☁️</Text>
                         )}
@@ -3231,7 +3270,7 @@ export default function App() {
                         Вопросов: {item.questionCount || 0}{"\n"}Размер: {Math.round(item.size / 1024)} KB
                       </Text>
                       <Text style={[styles.libraryMeta, { fontSize: 11, marginTop: 2 }]}>
-                        Создан: {formatNiceDate(getStoredQuizMeta(item.name).createdAt || item.mtime * 1000)}
+                        Создан: {formatNiceDate(item.createdAt || item.mtime * 1000)}
                       </Text>
                     </View>
                     {item.canEdit && (

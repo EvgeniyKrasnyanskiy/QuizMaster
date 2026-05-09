@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   Alert, ScrollView, KeyboardAvoidingView, Platform,
-  StatusBar,
+  StatusBar, Animated
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,11 +64,21 @@ export default function QuizScreen({
   const [totalTime, setTotalTime] = useState(initialData?.totalTime || 0);
   const [questionStartTime, setQuestionStartTime] = useState(initialData?.questionStartTime || 0);
   const [questionTimes, setQuestionTimes] = useState(initialData?.questionTimes || new Array(questions.length).fill(0));
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [textInput, setTextInput] = useState('');
 
   const timerRef = useRef(null);
+
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [currentIdx]);
 
   // Восстановление ответов при смене вопроса
   useEffect(() => {
@@ -288,7 +298,7 @@ export default function QuizScreen({
   if (!current) return null;
 
   const answeredCount = results.filter(r => r !== null).length;
-  const progress = answeredCount / questions.length;
+  const progress = (currentIdx + 1) / questions.length;
   const currentIsAnswered = results[currentIdx] !== null;
   const firstEmptyIdx = results.findIndex(r => r === null);
   const allAnswered = firstEmptyIdx === -1;
@@ -313,50 +323,54 @@ export default function QuizScreen({
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.quizBody} contentContainerStyle={{ paddingBottom: 16 }} keyboardShouldPersistTaps="handled">
-          <Text style={styles.questionText}>{current.q}</Text>
-          {current.type === 'text' && current.hint ? (
-            <Text style={styles.hintText}>💡 {current.hint}</Text>
-          ) : null}
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <Text style={styles.questionText}>{current.q || current.question}</Text>
+            {(current.hint || current.description) ? (
+              <Text style={styles.hintText}>💡 {current.hint || current.description}</Text>
+            ) : null}
 
-          {current.type === 'multi' ? (
-            <View style={styles.optionsContainer}>
-              {current.opts.map((opt, i) => {
-                const selected = selectedAnswers.includes(i);
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => toggleOption(i)}
-                    activeOpacity={0.8}
-                    style={[styles.option, selected && styles.optionSelected]}
-                  >
-                    <View style={[styles.optionCheck, selected && styles.optionCheckSelected]}>
-                      {selected && <Text style={styles.optionCheckMark}>✓</Text>}
-                    </View>
-                    <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
-                      {opt}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : (
-            <TextInput
-              style={styles.answerInput}
-              placeholder="Введите ответ..."
-              placeholderTextColor={C.textDisabled}
-              value={textInput}
-              onChangeText={setTextInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          )}
+            {current.type === 'multi' ? (
+              <View style={styles.optionsContainer}>
+                {(current.opts || current.options || []).map((opt, i) => {
+                  const selected = selectedAnswers.includes(i);
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => toggleMultiAnswer(i)}
+                      activeOpacity={0.8}
+                      style={[styles.option, selected && styles.optionSelected]}
+                    >
+                      <View style={[styles.optionCheck, selected && styles.optionCheckSelected]}>
+                        {selected && <Ionicons name="checkmark" size={16} color={C.white} />}
+                      </View>
+                      <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                        {opt}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <TextInput
+                style={styles.answerInput}
+                placeholder="Введите ответ..."
+                placeholderTextColor={C.textDisabled}
+                value={textInput}
+                onChangeText={setTextInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            )}
+          </Animated.View>
         </ScrollView>
 
         <View style={styles.quizBottomBar}>
           <View style={styles.quizNavRow}>
-            <TouchableOpacity onPress={handleBack} disabled={currentIdx === 0} style={[L.navBtn, currentIdx === 0 && { opacity: 0.3 }]}>
-              <Text style={L.navBtnText}>Назад</Text>
-            </TouchableOpacity>
+            {currentIdx > 0 ? (
+              <TouchableOpacity onPress={handleBack} style={L.navBtn}>
+                <Text style={L.navBtnText}>Назад</Text>
+              </TouchableOpacity>
+            ) : <View style={{ flex: 1 }} />}
 
             <TouchableOpacity
               onPress={handleAnswer}
@@ -375,7 +389,8 @@ export default function QuizScreen({
                 {allAnswered ? '✅ Завершить' : (() => {
                   if (currentIdx === questions.length - 1) {
                     const hasOtherSkipped = results.some((r, i) => r === null && i !== currentIdx);
-                    return hasOtherSkipped ? '↩️ К пропущенным' : 'Завершить';
+                    if (hasOtherSkipped) return '↩️ К пропущенным';
+                    return results[currentIdx] === null ? '⚠️ Завершить' : 'Завершить';
                   }
                   return 'Вперёд';
                 })()}
