@@ -2736,6 +2736,9 @@ export default function App() {
                 <View style={{ marginTop: 20 }}>
                   <Btn label="Выход" onPress={handleExitApp} variant="black" />
                 </View>
+                <Text style={{ textAlign: 'center', marginTop: 16, color: C.textDisabled, fontSize: 10 }}>
+                  Версия {APP_VERSION}
+                </Text>
               </View>
             </KeyboardAvoidingView>
           </View>
@@ -3178,7 +3181,7 @@ export default function App() {
             )}
             <View style={L.libraryWrap}>
               <Text style={[styles.welcomeDesc, { marginBottom: 12, textAlign: 'left', fontSize: 13 }]}>
-                Локальные тесты. Если тест уже опубликован, изменения в редакторе автоматически обновят его и в облаке GitHub.
+                Локальные тесты. Если тест уже есть в облаке, изменения в редакторе автоматически обновят его и в облаке GitHub.
               </Text>
               {/* ОПТИМИЗИРОВАНО: Добавлены параметры для FlatList */}
               <FlatList

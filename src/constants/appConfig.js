@@ -2,7 +2,7 @@ import { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, APP_SALT as _APP_SALT, ADMIN_C
 export const APP_SALT = _APP_SALT;
 import * as FileSystem from 'expo-file-system/legacy';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.2.2';
 export const FALLBACK_APP_SALT = 'Quiz_Secure_Salt_v20260428';
 
 export const COOLDOWN_SETTINGS = {
