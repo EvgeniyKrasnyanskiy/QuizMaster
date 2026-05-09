@@ -54,6 +54,7 @@ import { useConfig, sanitizeRemoteConfig } from './src/hooks/useConfig';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import StudentLibraryScreen from './src/screens/StudentLibraryScreen';
 import TeacherLibraryScreen from './src/screens/TeacherLibraryScreen';
+import EditorScreen from './src/screens/EditorScreen';
 
 // ── GitHub Configuration ──
 // Destructuring removed to prevent runtime crashes if GITHUB_CONFIG is undefined at boot.
@@ -2795,37 +2796,19 @@ export default function App() {
 
       if (screen === 'edit-quiz') {
         return (
-          <View style={safeStyle}>
-            <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-            {renderHeader(
-              editIsNew ? 'Создание теста' : 'Редактор',
-              () => setScreen(editIsCloud ? 'cloud-manager' : 'teacher-library')
-            )}
-            <View style={styles.editorWrap}>
-              <Text style={[styles.label, { marginBottom: 4, marginLeft: 4 }]}>Имя файла:</Text>
-              <TextInput
-                style={[styles.input, { marginBottom: 12, backgroundColor: C.surfaceHigh }]}
-                placeholder="Название файла"
-                placeholderTextColor={C.textDisabled}
-                value={editFileName}
-                onChangeText={setEditFileName}
-              />
-              <Text style={[styles.label, { marginBottom: 4, marginLeft: 4 }]}>Содержимое (CSV):</Text>
-              <TextInput
-                style={styles.editorInput}
-                multiline
-                value={editContent}
-                onChangeText={setEditContent}
-                autoCapitalize="none"
-                autoCorrect={false}
-                textAlignVertical="top"
-              />
-              <View style={styles.editorActions}>
-                <Btn label="Сохранить" onPress={handleSaveEditedQuiz} disabled={!!loading} variant="gold" />
-                <Btn label="Отмена" variant="black" onPress={() => setScreen('teacher-library')} style={{ marginTop: 8 }} />
-              </View>
-            </View>
-          </View>
+          <EditorScreen
+            safeStyle={safeStyle}
+            renderHeader={renderHeader}
+            setScreen={setScreen}
+            editIsNew={editIsNew}
+            editIsCloud={editIsCloud}
+            editFileName={editFileName}
+            setEditFileName={setEditFileName}
+            editContent={editContent}
+            setEditContent={setEditContent}
+            handleSaveEditedQuiz={handleSaveEditedQuiz}
+            loading={loading}
+          />
         );
       }
 
