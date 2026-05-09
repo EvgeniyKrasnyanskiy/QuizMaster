@@ -3551,7 +3551,7 @@ export default function App() {
             ) : (
               <View style={L.libraryWrap}>
                 <Text style={[styles.welcomeDesc, { marginBottom: 16, textAlign: 'left' }]}>
-                  Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии.
+                  Здесь отображаются все тесты, находящиеся в репозитории GitHub. Вы можете удалить их отсюда, даже если у вас нет локальной копии. При редактировании файла он будет автоматически перезаписан в облаке.
                 </Text>
                 <FlatList
                   data={cloudRegistry.filter(item => item.authorId === teacherProfile?.owner)}
@@ -3582,7 +3582,7 @@ export default function App() {
                           {loading ? (
                             <ActivityIndicator size="small" color="#fff" />
                           ) : (
-                            <Text style={styles.deleteBtnText}>Удалить 🗑</Text>
+                            <Text style={styles.deleteBtnText}>🗑</Text>
                           )}
                         </TouchableOpacity>
                       </View>
