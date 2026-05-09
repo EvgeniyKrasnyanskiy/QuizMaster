@@ -298,7 +298,7 @@ export default function TeacherProfileScreen({
           />
 
           <Btn
-            label={isConnected ? "Проверить соединение" : "Сохранить и проверить"}
+            label={isConnected ? "Проверить статус связи" : "Подключить GitHub"}
             onPress={validateAndSaveProfile}
             loading={loading}
             variant={isConnected ? "success" : "gold"}
@@ -316,7 +316,7 @@ export default function TeacherProfileScreen({
           )}
 
           <Text style={[styles.cardDesc, { marginTop: 16, fontSize: 12, opacity: 0.7 }]}>
-            Настройки будут проверены через GitHub API перед сохранением. Токен используется только для работы с вашим репозиторием.
+            Приложение проверит доступ к вашему репозиторию. Мы заботимся о безопасности: ваш токен хранится локально и не передается на сторонние серверы.
           </Text>
         </Card>
 
@@ -497,10 +497,7 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>2. Инициализируйте реестр</Text>
               <Text style={[styles.cardDesc, { marginBottom: 15 }]}>
-                Создайте в корне репозитория файл <Text style={{ fontWeight: '700', color: C.white }}>registry.json</Text> с содержимым:{" "}
-                <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 12, backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  {"[]\n"}
-                </Text>
+                Создайте пустой реестр — файл <Text style={{ fontWeight: '700', color: C.white }}>registry.json</Text> в корне репозитория с текстом <Text style={{ fontWeight: '700', color: C.white }}>[]</Text>. В него приложение будет записывать список ваших тестов для учеников.
               </Text>
 
               <Text style={[styles.label, { color: C.accent }]}>3. Получите Токен доступа</Text>
@@ -511,7 +508,7 @@ export default function TeacherProfileScreen({
 
               <Text style={[styles.label, { color: C.accent }]}>4. Подключитесь</Text>
               <Text style={[styles.cardDesc, { marginBottom: 20 }]}>
-                Введите ваш Username, Repo и Токен. Публикация будет происходить в этот репозиторий, а ученики смогут подписаться на ваш Username.
+                Введите ваш Username, Repo и Токен. Ваш токен хранится локально на устройстве и используется только для загрузки тестов в ваш личный GitHub.
               </Text>
 
               <Btn label="Понятно" onPress={() => setHelpVisible(false)} />

@@ -53,7 +53,7 @@ export default function TeacherLibraryScreen({
       )}
       <View style={L.libraryWrap}>
         <Text style={[styles.welcomeDesc, { marginBottom: 12, textAlign: 'left', fontSize: 13 }]}>
-          Локальные тесты. Если тест уже есть в облаке, изменения в редакторе автоматически обновят его и в облаке GitHub.
+          Ваши локальные тесты. После редактирования не забудьте нажать кнопку ☁️, чтобы обновить версию в облаке для учеников.
         </Text>
         <FlatList
           data={teacherLibraryFiles}
