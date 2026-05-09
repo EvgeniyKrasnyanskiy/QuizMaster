@@ -224,7 +224,7 @@ const HelpModal = ({ visible, onClose, type = 'student', config = {} }) => {
             {isTemplate ? (
               <View>
                 <Text style={[styles.helpText, { fontWeight: '700', color: C.accent, marginBottom: 8 }]}>Формат строк (CSV/TXT):</Text>
-                
+
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 10, marginBottom: 12 }}>
                   <Text style={{ fontWeight: '700', color: C.white, marginBottom: 4 }}>M — Множественный выбор</Text>
                   <Text style={{ color: C.textDisabled, fontSize: 12, fontStyle: 'italic', marginBottom: 4 }}>
@@ -1609,11 +1609,11 @@ export default function App() {
     const downloadedFiles = await listDatFiles(SafeDirs.DOWNLOADS);
 
     const combined = [...ownFiles, ...downloadedFiles];
-    
+
     // Deduplicate and filter 0-size files
     const uniqueFiles = [];
     const seenPaths = new Set();
-    
+
     for (const file of combined) {
       if (file.size <= 0) continue;
       if (!seenPaths.has(file.path)) {
@@ -3013,7 +3013,7 @@ export default function App() {
 
                             if (!hasResult) {
                               if (status.hasProgress) {
-                                return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Не закончен</Text>;
+                                return <Text style={{ color: C.warning, fontSize: 12, fontWeight: '700' }}>⏳ Прерван</Text>;
                               }
                               return <Text style={{ color: C.textSecondary, fontSize: 12 }}>Не начато</Text>;
                             }
@@ -3326,7 +3326,7 @@ export default function App() {
       if (screen === 'prestart') {
         const prestartText =
           config.prestartText ||
-          `Тест загружен успешно!\nВопросов: ${questions.length}\nВнимательно читайте каждый вопрос. При множественном выборе возможно несколько правильных ответов. Кнопка «Вперед» позволяет переходить к следующему вопросу.\nУдачи!`;
+          `Тест загружен успешно!\nВнимательно читайте каждый вопрос. При множественном выборе возможно несколько правильных ответов. Кнопка «Вперед» позволяет переходить к следующему вопросу.\nУдачи!`;
 
         return (
           <View style={safeStyle}>
