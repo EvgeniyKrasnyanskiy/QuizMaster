@@ -187,8 +187,10 @@ export default function QuizScreen({
     setResults(updatedResults);
 
     const updatedTimes = [...questionTimes];
-    updatedTimes[currentIdx] = (updatedTimes[currentIdx] || 0) + timeSpent;
-    setQuestionTimes(updatedTimes);
+    if (results[currentIdx] === null) {
+      updatedTimes[currentIdx] = (updatedTimes[currentIdx] || 0) + timeSpent;
+      setQuestionTimes(updatedTimes);
+    }
 
     const isLast = currentIdx === questions.length - 1;
     const firstEmptyIdx = updatedResults.findIndex(r => r === null);

@@ -319,6 +319,8 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState(0);
   const syncAnim = useRef(new Animated.Value(0)).current;
   const isSyncingRef = useRef(false);
+  const [isAppReady, setIsAppReady] = useState(false);
+  const syncTimerRef = useRef(null);
 
   useEffect(() => {
     isSyncingRef.current = isSyncing;
@@ -582,34 +584,42 @@ export default function App() {
         }
 
         checkAppVersion();
-
+        await refreshStudentLibrary();
+        await refreshTeacherLibrary();
+        fetchMasterData();
       } catch (e) {
         console.warn('Bootstrap Error:', e.message);
         setConfig(DEFAULT_CONFIG);
         setLocalConfig(DEFAULT_CONFIG);
       } finally {
         loadConfig({ silent: true });
+        setIsAppReady(true);
       }
     };
     bootstrap();
-    refreshStudentLibrary();
-    refreshTeacherLibrary();
-    checkForUpdates();
-    fetchMasterData();
   }, []);
 
   // Синхронизация при изменении профиля учителя (логин)
   useEffect(() => {
-    if (teacherProfile && teacherProfile.token) {
+    if (isAppReady && teacherProfile && teacherProfile.token) {
       refreshTeacherLibrary();
       checkForUpdates();
     }
-  }, [teacherProfile]);
+  }, [teacherProfile, isAppReady]);
 
-  // Синхронизация при изменении подписок
+  // Синхронизация при изменении подписок (с дебаунсом)
   useEffect(() => {
-    checkForUpdates();
-  }, [subscriptions]);
+    if (!isAppReady) return;
+    
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      checkForUpdates();
+    }, 1500); // 1.5s debounce
+    
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [subscriptions, isAppReady]);
 
   // ─────────────────────────────────────────────
   // GITHUB CLOUD HELPERS
