@@ -1655,7 +1655,8 @@ export default function App() {
     return { path: targetPath, name: normalizedName, overwritten: existing.exists };
   };
 
-  const loadQuizFromDatFile = async (path, name, authorId = '') => {
+  const loadQuizFromDatFile = async (path, name, authorId = '', options = {}) => {
+    const { navigateToQuiz = true } = options;
     const encrypted = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 });
     const decrypted = decodeEncryptedPayload(encrypted);
     const { questions } = parseQuestions(decrypted);
@@ -1664,7 +1665,10 @@ export default function App() {
       throw new Error('Файл не содержит корректных вопросов.');
     }
     const baseName = stripDatExtension(name || 'quiz');
-    _startQuiz(parsed, baseName, path, authorId);
+    if (navigateToQuiz) {
+      _startQuiz(parsed, baseName, path, authorId);
+    }
+    return { questions: parsed };
   };
 
   const handleEncryptAndSave = async () => {
@@ -1879,20 +1883,28 @@ export default function App() {
             },
             {
               text: 'Продолжить',
-              onPress: () => {
-                const payload = JSON.parse(saved);
-                setQuestions(payload.questions || []);
-                setResumeData(payload);
-                setTestFileName(payload.testFileName || stripDatExtension(file.displayName));
-                setActiveAuthorId(file.authorId);
-                setActiveQuizPath(file.path);
-                setActiveProgressKey(key);
-                setActiveStatusKey(statusKey);
-                setResultsReadOnly(false);
-                setResults([]);
-                setActiveSessionId(Date.now().toString());
-                setResultsOrigin('student');
-                setScreen('quiz');
+              onPress: async () => {
+                try {
+                  // Questions are NOT stored in progress payload anymore — reload from .dat file
+                  const { questions: loadedQuestions } = await loadQuizFromDatFile(
+                    file.path, file.displayName, file.authorId, { navigateToQuiz: false }
+                  );
+                  const payload = JSON.parse(saved);
+                  setQuestions(loadedQuestions || []);
+                  setResumeData(payload);
+                  setTestFileName(payload.testFileName || stripDatExtension(file.displayName));
+                  setActiveAuthorId(file.authorId);
+                  setActiveQuizPath(file.path);
+                  setActiveProgressKey(key);
+                  setActiveStatusKey(statusKey);
+                  setResultsReadOnly(false);
+                  setResults([]);
+                  setActiveSessionId(Date.now().toString());
+                  setResultsOrigin('student');
+                  setScreen('quiz');
+                } catch (e) {
+                  Alert.alert('Ошибка', 'Не удалось загрузить тест: ' + e.message);
+                }
               },
             },
             { text: 'Отмена', style: 'cancel' },
@@ -2354,14 +2366,19 @@ export default function App() {
           formattedAnswer = '—';
           isCorrect = false;
         } else if (q.type === 'multi') {
-          // Standardized extraction (0-based)
-          const rawCorrect = Array.isArray(q.a) ? q.a[0] : q.a;
-          const correctIdx = parseInt(rawCorrect, 10);
+          // Full set comparison — supports multiple correct answers (e.g. "1,3" → [0, 2])
+          const correctIndices = (Array.isArray(q.a) ? q.a : [q.a])
+            .map(v => parseInt(v, 10))
+            .filter(v => !isNaN(v));
+          const selectedIndices = (Array.isArray(answer) ? answer : [])
+            .map(idx => parseInt(idx, 10))
+            .filter(v => !isNaN(v));
 
-          const selectedIndices = (Array.isArray(answer) ? answer : []).map(idx => parseInt(idx, 10)).filter(v => !isNaN(v));
-          const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
+          const correctSet = new Set(correctIndices);
+          const selectedSet = new Set(selectedIndices);
+          isCorrect = correctSet.size === selectedSet.size &&
+            [...correctSet].every(v => selectedSet.has(v));
 
-          isCorrect = userIndex === correctIdx;
           formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
         } else {
           // Улучшенная нормализация по просьбе пользователя

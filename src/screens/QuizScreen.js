@@ -94,12 +94,13 @@ export default function QuizScreen({
     return () => clearInterval(timerRef.current);
   }, []);
 
-  // Автосохранение прогресса
+  // Автосохранение прогресса (только при смене вопроса или ответа, не каждую секунду)
   useEffect(() => {
     if (!activeProgressKey || questions.length === 0) return;
 
+    // NOTE: We do NOT store `questions` here — they are already on disk in the .dat file.
+    // Storing them would serialize 50-100KB on every answer change unnecessarily.
     const payload = {
-      questions,
       currentIdx,
       results,
       totalTime,
@@ -109,10 +110,10 @@ export default function QuizScreen({
       userName,
     };
 
-    AsyncStorage.setItem(activeProgressKey, JSON.stringify(payload)).catch(e => {
+    AsyncStorage.setItem(activeProgressKey, JSON.stringify(payload)).catch(() => {
       // Silent fail
     });
-  }, [currentIdx, results, totalTime]);
+  }, [currentIdx, results]); // NOTE: totalTime intentionally excluded — saves on answer/navigation, not every second
 
   const finalizeResults = (rawResults, times) => {
     return questions.map((q, i) => {
@@ -130,12 +131,19 @@ export default function QuizScreen({
       let formattedAnswer = '';
 
       if (q.type === 'multi') {
-        const rawCorrect = Array.isArray(q.a) ? q.a[0] : q.a;
-        const correctIdx = parseInt(rawCorrect, 10);
-        const selectedIndices = (Array.isArray(answer) ? answer : []).map(idx => parseInt(idx, 10)).filter(v => !isNaN(v));
-        const userIndex = selectedIndices.length > 0 ? selectedIndices[0] : -1;
+        const correctIndices = (Array.isArray(q.a) ? q.a : [q.a])
+          .map(v => parseInt(v, 10))
+          .filter(v => !isNaN(v));
+        const selectedIndices = (Array.isArray(answer) ? answer : [])
+          .map(idx => parseInt(idx, 10))
+          .filter(v => !isNaN(v));
 
-        isCorrect = !isNaN(correctIdx) && userIndex === correctIdx;
+        // Full set comparison: both size and content must match exactly
+        const correctSet = new Set(correctIndices);
+        const selectedSet = new Set(selectedIndices);
+        isCorrect = correctSet.size === selectedSet.size &&
+          [...correctSet].every(v => selectedSet.has(v));
+
         formattedAnswer = selectedIndices.map(idx => q.opts[idx]).join(', ');
       } else {
         const userStr = String(answer || '').trim().toLowerCase();
@@ -236,11 +244,12 @@ export default function QuizScreen({
       } else {
         if (results[currentIdx] === null) {
           Alert.alert(
-            "Внимание", 
-            "Вы не ответили на последний вопрос. Завершить тест с прочерком?",
+            "Внимание",
+            "Вы не ответили на последний вопрос. Завершить тест?",
             [
               { text: "Отмена", style: "cancel" },
-              { text: "Завершить", style: "destructive", onPress: () => {
+              {
+                text: "Завершить", style: "destructive", onPress: () => {
                   const finalRaw = [...results];
                   onFinish({
                     results: finalizeResults(finalRaw, questionTimes),
@@ -249,7 +258,8 @@ export default function QuizScreen({
                     totalTime,
                     questionTimes
                   });
-              }}
+                }
+              }
             ]
           );
         } else {
