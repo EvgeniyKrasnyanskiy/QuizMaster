@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "QuizMaster",
-    "slug": "quiz-app",
+    "slug": "quiz-master",
     "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
