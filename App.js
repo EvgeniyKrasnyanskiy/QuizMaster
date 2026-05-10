@@ -222,7 +222,7 @@ export default function App() {
 
   const checkAppVersion = async () => {
     try {
-      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/QuizMaster/refs/heads/main/package.json');
+      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/latest_version.json');
       if (response.ok) {
         const data = await response.json();
         if (data.version && data.version !== APP_VERSION) {
@@ -231,7 +231,7 @@ export default function App() {
             `Доступна новая версия приложения: ${data.version}. Текущая версия: ${APP_VERSION}.\n\nРекомендуется обновить приложение для стабильной работы.`,
             [
               { text: 'Позже', style: 'cancel' },
-              { text: 'Скачать', onPress: () => Linking.openURL('https://github.com/EvgeniyKrasnyanskiy/QuizApp/releases') }
+              { text: 'Скачать', onPress: () => Linking.openURL('https://github.com/EvgeniyKrasnyanskiy/quiz-app-data/raw/main/app-release.apk') }
             ]
           );
         }
@@ -379,12 +379,12 @@ export default function App() {
   // Синхронизация при изменении подписок (с дебаунсом)
   useEffect(() => {
     if (!isAppReady) return;
-    
+
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       checkForUpdates();
     }, 1500); // 1.5s debounce
-    
+
     return () => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
@@ -1224,7 +1224,7 @@ export default function App() {
         } else {
           displayName = stripDatExtension(displayName);
         }
-        
+
         if (metadata && metadata.createdat) {
           metaDate = metadata.createdat;
         }
