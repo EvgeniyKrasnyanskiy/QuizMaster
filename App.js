@@ -222,7 +222,7 @@ export default function App() {
 
   const checkAppVersion = async () => {
     try {
-      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/latest_version.json');
+      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-master-data/refs/heads/main/latest_version.json');
       if (response.ok) {
         const data = await response.json();
         if (data.version && data.version !== APP_VERSION) {
@@ -618,7 +618,7 @@ export default function App() {
         const exists = await FileSystem.getInfoAsync(localPath);
         if (!exists.exists) {
           try {
-            const creds = { owner: item.authorId, repo: item.repo || 'quiz-app-data' };
+            const creds = { owner: item.authorId, repo: item.repo || 'quiz-master-data' };
             const cloudFilePath = `${GITHUB_CONFIG.CLOUD_TESTS_DIR}/${item.fileName}`;
             const cloudFile = await githubRequest(cloudFilePath, 'GET', null, creds);
             if (cloudFile && cloudFile.content) {
@@ -809,7 +809,7 @@ export default function App() {
 
     try {
       setLoading(true);
-      const creds = { owner: username, repo: 'quiz-app-data' }; // Default repo name as discussed
+      const creds = { owner: username, repo: 'quiz-master-data' }; // Default repo name as discussed
       // Checking if registry exists to verify
       const res = await githubRequest(GITHUB_CONFIG.REGISTRY_PATH, 'GET', null, creds);
 
@@ -818,7 +818,7 @@ export default function App() {
           id: username,
           name: username,
           owner: username,
-          repo: 'quiz-app-data',
+          repo: 'quiz-master-data',
           isMaster: false,
           disabled: false
         };
@@ -830,7 +830,7 @@ export default function App() {
         checkForUpdates();
       }
     } catch (e) {
-      Alert.alert('Ошибка', 'Не удалось найти репозиторий "quiz-app-data" у этого пользователя или он недоступен.');
+      Alert.alert('Ошибка', 'Не удалось найти репозиторий "quiz-master-data" у этого пользователя или он недоступен.');
     } finally {
       setLoading(false);
     }
@@ -1024,7 +1024,7 @@ export default function App() {
   const fetchMasterData = async () => {
     try {
       // 1. Загружаем registry.json (публично)
-      const baseUrl = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main';
+      const baseUrl = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-master-data/refs/heads/main';
       const registryUrl = `${baseUrl}/registry.json`;
 
       console.log("[MasterSync] Fetching registry:", registryUrl);
@@ -1046,7 +1046,7 @@ export default function App() {
           id: subId,
           name: authorName,
           owner: masterOwner,
-          repo: 'quiz-app-data',
+          repo: 'quiz-master-data',
           isMaster: true
         }];
 

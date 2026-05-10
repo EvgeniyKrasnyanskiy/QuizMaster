@@ -279,7 +279,7 @@ export default function TeacherProfileScreen({
             style={[styles.input, isConnected && { backgroundColor: 'rgba(255,255,255,0.03)', color: C.textDisabled }]}
             value={tempProfile.repo}
             onChangeText={(val) => setTempProfile(prev => ({ ...prev, repo: val }))}
-            placeholder="Например: quiz-app-data"
+            placeholder="Например: quiz-master-data"
             placeholderTextColor={C.textDisabled}
             autoCapitalize="none"
             editable={!isConnected}

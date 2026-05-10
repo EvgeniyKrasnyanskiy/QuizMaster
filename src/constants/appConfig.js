@@ -43,13 +43,13 @@ const _GITHUB_CONFIG = {
   get REPO() { return GITHUB_REPO || ''; },
   get REGISTRY_PATH() { return 'registry.json'; },
   get CLOUD_TESTS_DIR() { return 'tests'; },
-  get DEFAULT_REPO_NAME() { return 'quiz-app-data'; },
+  get DEFAULT_REPO_NAME() { return 'quiz-master-data'; },
   get disabled() { return false; },
   get API_BASE() {
     return `https://api.github.com/repos/${this.OWNER || ''}/${this.REPO || ''}/contents`;
   },
   get CONFIG_URL() {
-    return 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/quiz-config.json';
+    return 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-master-data/refs/heads/main/quiz-config.json';
   },
 };
 export { _GITHUB_CONFIG as GITHUB_CONFIG };
@@ -117,4 +117,4 @@ export const DEFAULT_CONFIG = {
   disabled: false,
 };
 
-export const MASTER_SOURCE_URL = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/tests/';
+export const MASTER_SOURCE_URL = 'https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-master-data/refs/heads/main/tests/';
