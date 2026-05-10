@@ -222,7 +222,7 @@ export default function App() {
 
   const checkAppVersion = async () => {
     try {
-      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/quiz-app-data/refs/heads/main/package.json');
+      const response = await fetch('https://raw.githubusercontent.com/EvgeniyKrasnyanskiy/QuizMaster/refs/heads/main/package.json');
       if (response.ok) {
         const data = await response.json();
         if (data.version && data.version !== APP_VERSION) {
