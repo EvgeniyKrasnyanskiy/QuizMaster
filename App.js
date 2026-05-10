@@ -231,7 +231,7 @@ export default function App() {
             `Доступна новая версия приложения: ${data.version}. Текущая версия: ${APP_VERSION}.\n\nРекомендуется обновить приложение для стабильной работы.`,
             [
               { text: 'Позже', style: 'cancel' },
-              { text: 'Скачать', onPress: () => Linking.openURL('https://github.com/EvgeniyKrasnyanskiy/quiz-app-data/raw/main/app-release.apk') }
+              { text: 'Скачать', onPress: () => Linking.openURL('https://github.com/EvgeniyKrasnyanskiy/QuizMaster/releases') }
             ]
           );
         }
